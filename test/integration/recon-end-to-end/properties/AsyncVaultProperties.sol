@@ -90,7 +90,7 @@ abstract contract AsyncVaultProperties is Setup, Asserts {
 
         uint256 maxDep = IAsyncVault(asyncVaultTarget).maxDeposit(_getActor());
 
-        /// @audit No Revert is proven by asyncVault_5
+        /// @custom:audit No Revert is proven by asyncVault_5
 
         uint256 sum = maxDep + amt;
         if (sum == 0) {

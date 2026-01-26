@@ -60,13 +60,13 @@ abstract contract VaultCallbackTargets is BaseTargetFunctions, Properties {
                 /*bool pendingCancelRedeemRequest*/
             ) = asyncRequestManager.investments(IBaseVault(address(vault)), investor);
 
-            /// @audit DANGEROUS TODO: Clamp so we ensure we never give remaining above what was sent, fully trusted
+            /// @custom:audit DANGEROUS TODO: Clamp so we ensure we never give remaining above what was sent, fully trusted
             /// value
             // remainingInvestOrder %=
             // Need to cap currencyPayout by the amount in the escrow?
             // TO ASK Should currency payout be capped to the amount?
             if (pendingDepositRequest == 0) {
-                /// @audit NOTHING REQUESTED = WE STOP
+                /// @custom:audit NOTHING REQUESTED = WE STOP
                 return;
             } else {
                 // TODO(@hieronx): revisit clamps here
@@ -117,18 +117,18 @@ abstract contract VaultCallbackTargets is BaseTargetFunctions, Properties {
                 /*bool pendingCancelRedeemRequest*/
             ) = asyncRequestManager.investments(vault, investor);
 
-            /// @audit DANGEROUS TODO: Clamp so we ensure we never give remaining above what was sent, fully trusted
+            /// @custom:audit DANGEROUS TODO: Clamp so we ensure we never give remaining above what was sent, fully trusted
             /// value
             // remainingInvestOrder %=
             // Need to cap currencyPayout by the amount in the escrow?
             // TO ASK Should currency payout be capped to the amount?
             if (pendingRedeemRequest == 0) {
-                /// @audit NOTHING REQUESTED = WE STOP
+                /// @custom:audit NOTHING REQUESTED = WE STOP
                 return;
             } else {
                 // TODO(@hieronx): revisit clamps here
                 tokenPayout %= pendingRedeemRequest; // Needs to be capped at this value
-                    // remainingRedeemOrder = pendingRedeemRequest - tokenPayout; /// @audit Replaced by
+                    // remainingRedeemOrder = pendingRedeemRequest - tokenPayout; /// @custom:audit Replaced by
                     // decreaseByAmount
             }
         }
@@ -137,7 +137,7 @@ abstract contract VaultCallbackTargets is BaseTargetFunctions, Properties {
         // // TODO: test_invariant_asyncVault_10_w_recon
         MockERC20(_getAsset()).mint(address(escrow), currencyPayout);
         mintedByCurrencyPayout[_getAsset()] += currencyPayout;
-        // /// @audit We mint payout here which has to be paid by the borrowers
+        // /// @custom:audit We mint payout here which has to be paid by the borrowers
         // // END TODO test_invariant_asyncVault_10_w_recon
 
         asyncRequestManager.fulfillRedeemRequest(
@@ -194,18 +194,18 @@ abstract contract VaultCallbackTargets is BaseTargetFunctions, Properties {
     //             /*bool pendingCancelRedeemRequest*/
     //         ) = asyncRequestManager.investments(vault, investor);
 
-    //         /// @audit DANGEROUS TODO: Clamp so we ensure we never give remaining above what was sent, fully trusted
+    //         /// @custom:audit DANGEROUS TODO: Clamp so we ensure we never give remaining above what was sent, fully trusted
     //         /// value
     //         // remainingInvestOrder %=
     //         // Need to cap currencyPayout by the amount in the escrow?
     //         // TO ASK Should currency payout be capped to the amount?
     //         if (pendingDepositRequest == 0) {
-    //             /// @audit NOTHING REQUESTED = WE STOP
+    //             /// @custom:audit NOTHING REQUESTED = WE STOP
     //             return;
     //         } else {
     //             currencyPayout %= pendingDepositRequest + 1; // Needs to be capped at this value
     //             totalCurrencyPayout += currencyPayout;
-    //             /// @audit TODO Remove totalCurrencyPayout
+    //             /// @custom:audit TODO Remove totalCurrencyPayout
     //         }
     //     }
     //     // Need to cap remainingInvestOrder by the shares?
@@ -220,7 +220,7 @@ abstract contract VaultCallbackTargets is BaseTargetFunctions, Properties {
     //         currencyPayout,
     //         cancelledShares
     //     );
-    //     /// @audit Reduced by: currencyPayout
+    //     /// @custom:audit Reduced by: currencyPayout
 
     //     cancelDepositCurrencyPayout[_getAsset()] += currencyPayout;
 
@@ -258,13 +258,13 @@ abstract contract VaultCallbackTargets is BaseTargetFunctions, Properties {
     //             /*bool pendingCancelRedeemRequest*/
     //         ) = asyncRequestManager.investments(vault, investor);
 
-    //         /// @audit DANGEROUS TODO: Clamp so we ensure we never give remaining above what was sent, fully trusted
+    //         /// @custom:audit DANGEROUS TODO: Clamp so we ensure we never give remaining above what was sent, fully trusted
     //         /// value
     //         // remainingInvestOrder %=
     //         // Need to cap currencyPayout by the amount in the escrow?
     //         // TO ASK Should currency payout be capped to the amount?
     //         if (pendingRedeemRequest == 0) {
-    //             /// @audit NOTHING REQUESTED = WE STOP
+    //             /// @custom:audit NOTHING REQUESTED = WE STOP
     //             return;
     //         } else {
     //             tokenPayout %= pendingRedeemRequest + 1; // Needs to be capped at this value
@@ -272,7 +272,7 @@ abstract contract VaultCallbackTargets is BaseTargetFunctions, Properties {
     //     }
 
     //     asyncRequestManager.fulfillCancelRedeemRequest(PoolId.wrap(poolId), ShareClassId.wrap(scId), investor, AssetId.wrap(assetId), tokenPayout);
-    //     /// @audit tokenPayout
+    //     /// @custom:audit tokenPayout
 
     //     cancelRedeemShareTokenPayout[address(token)] += tokenPayout;
 
@@ -288,7 +288,7 @@ abstract contract VaultCallbackTargets is BaseTargetFunctions, Properties {
 
     //     uint256 balAfter = token.balanceOf(_getActor());
 
-    //     // E-2 /// @audit TODO: Forcefully moves tokens from user to here only if a transfer happened
+    //     // E-2 /// @custom:audit TODO: Forcefully moves tokens from user to here only if a transfer happened
     //     sumOfRedeemRequests[(address(token))] += balB4 - balAfter;
 
     //     __globals();

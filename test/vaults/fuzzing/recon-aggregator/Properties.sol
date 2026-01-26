@@ -27,7 +27,7 @@ abstract contract Properties is Setup {
     // When a message is executed, the total confirmation count is decreased by quorum
     // NOTE: assertion needs to be fixed for latest implementation
     function invariant_counter() public {
-        /// @audit CLAMP
+        /// @custom:audit CLAMP
         /// NOTE: When routers is 1, the property breaks
         if (RECON_ADAPTERS > 1) {
             for (uint256 i = 0; i < messages.length; i++) {

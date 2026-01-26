@@ -59,7 +59,7 @@ abstract contract GatewayMockTargets is BaseTargetFunctions, Properties {
         // NOTE END TEMPORARY
 
         decimals = decimals % RECON_MODULO_DECIMALS;
-        /// @audit NOTE: This works because we only deploy once!!
+        /// @custom:audit NOTE: This works because we only deploy once!!
 
         newToken = _newAsset(decimals);
         {

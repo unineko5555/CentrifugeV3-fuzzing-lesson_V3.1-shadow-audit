@@ -245,7 +245,7 @@ abstract contract Properties is BeforeAfter, Asserts, AsyncVaultCentrifugeProper
         uint256 ghostBalOfEscrow;
         unchecked {
             // Deposit Requests + Transfers In - Claimed Redemptions + TransfersOut
-            /// @audit Minted by Asset Payouts by Investors
+            /// @custom:audit Minted by Asset Payouts by Investors
             ghostBalOfEscrow = (
                 (sumOfDepositRequests[asset]  +
                 sumOfSyncDepositsAsset[asset] +
