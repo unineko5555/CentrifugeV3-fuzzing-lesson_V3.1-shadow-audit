@@ -1,149 +1,63 @@
 # Suggested Commands
 
-## Primary Development Commands
+All commands are run from the `protocol/` directory (or `protocol-v3/` symlink).
 
-### Testing
+## Build
 ```bash
-# Run all tests
-forge test
-
-# Run tests with verbosity
-forge test -vvv
-
-# Run specific test file
-forge test --match-path test/path/to/Test.t.sol
-
-# Run specific test function
-forge test --match-test testFunctionName
-
-# Run tests with gas reporting
-forge test --gas-report
-
-# Run with coverage
-forge coverage
-
-# Run fuzz tests (100 runs default, 1000 in CI)
-forge test --fuzz-runs 100
-
-# Run invariant tests
-forge test --invariant-runs 10 --invariant-depth 100
+forge build                    # Compile all contracts (solc 0.8.28, Cancun EVM)
+forge build --sizes            # Show contract sizes
 ```
 
-### Building
+## Test
 ```bash
-# Build the project
-forge build
+forge test                                              # Run all tests (default: 100 fuzz runs)
+forge test --match-path "test/core/hub/*.t.sol"         # Run specific module tests
+forge test --match-test "testDeposit"                   # Run specific test function
+forge test -vvvv                                        # Verbose output with traces
+forge test --ffi                                        # Enable FFI (needed for some tests)
 
-# Build with specific profile
-forge build --profile ci
-
-# Clean build artifacts
-forge clean
+# CI profiles
+FOUNDRY_PROFILE=ci forge test                           # CI fuzz: 1000 runs
+FOUNDRY_PROFILE=ci-invariant forge test                 # CI invariant: 100 runs, depth 1000
 ```
 
-### Formatting
+## Coverage
 ```bash
-# Format all Solidity files
-forge fmt
-
-# Check formatting without modifying
-forge fmt --check
+forge coverage                    # Basic coverage
+forge coverage --report lcov      # Generate lcov report
 ```
 
-### Linting
+## Gas Benchmarks
 ```bash
-# Lint Solidity files
-forge lint
+forge snapshot                    # Generate gas snapshots
+forge test --gas-report           # Gas usage report
+```
 
-# Run Slither static analysis
+## Formatting
+```bash
+forge fmt                         # Format Solidity code
+forge fmt --check                 # Check formatting without modifying
+```
+
+## Static Analysis
+```bash
+# Slither
 slither . --config-file slither.config.json
+
+# Aderyn (from project root, NOT protocol/)
+cd .. && aderyn                   # Uses aderyn.toml config (root = "protocol")
 ```
 
-### Documentation
+## Deployment
 ```bash
-# Generate documentation
-forge doc
-
-# Build docs to docs/ directory
-forge doc --out docs
+forge script script/FullDeployer.s.sol --rpc-url <network> --broadcast
+forge script script/CoreDeployer.s.sol --rpc-url <network> --broadcast
+forge script script/LaunchDeployer.s.sol --rpc-url <network> --broadcast
 ```
 
-### Gas Analysis
+## System Utilities (Darwin/macOS)
 ```bash
-# Create gas snapshot
-forge snapshot
-
-# Compare gas snapshots
-forge snapshot --diff
-
-# Gas report (automatically included in tests)
-forge test --gas-report
+git status / git diff / git log    # Version control
+ls / find / grep                   # File system navigation
+python3                            # Python scripts in script/deploy/
 ```
-
-### Other Useful Commands
-```bash
-# Display remappings
-forge remappings
-
-# Inspect contract
-forge inspect ContractName abi
-forge inspect ContractName storage
-
-# Flatten contract (for verification)
-forge flatten src/path/to/Contract.sol
-
-# Check config
-forge config
-
-# Display dependency tree
-forge tree
-```
-
-## Git Commands (macOS/Darwin)
-```bash
-# Standard git operations
-git status
-git add <files>
-git commit -m "message"
-git push
-git pull
-
-# Branch operations
-git branch
-git checkout -b <branch-name>
-git switch <branch-name>
-
-# Viewing changes
-git diff
-git log --oneline
-```
-
-## File Operations (macOS/Darwin)
-```bash
-# List files
-ls -la
-
-# Find files
-find . -name "*.sol"
-find . -type f -name "pattern"
-
-# Search in files (use ripgrep if available, otherwise grep)
-rg "pattern" --type sol
-grep -r "pattern" src/
-
-# File viewing
-cat <file>
-head -n 20 <file>
-tail -n 20 <file>
-less <file>
-
-# Directory navigation
-cd <path>
-pwd
-```
-
-## Project-Specific Notes
-- Working directory: `/Users/s.p./Desktop/Web3_Dev/Cyfrin_Updraft/audit/2025-10-centrifuge-protocol-v3-1-audit-unineko5555/protocol`
-- This is an **audit repository** - focus on testing and analysis, not deployment
-- FFI is enabled for scripting purposes
-- Multiple test profiles available: default, ci, ci-coverage, smt
