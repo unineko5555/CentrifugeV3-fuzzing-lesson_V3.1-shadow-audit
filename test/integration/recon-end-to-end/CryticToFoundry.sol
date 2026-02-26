@@ -280,5 +280,188 @@ contract CryticToFoundry is Test, TargetFunctions, FoundryAsserts {
     }
 
     /// === Newest Issues === ///
-    
+
+    // forge test --match-test test_property_holdings_balance_equals_escrow_balance_echidna_1 -vvv
+    // Echidna E2E reproducer #7835402543848108176
+    // Category A: holdings != escrow balance after deposit_sync (non-zero price, SyncDepositVault)
+    function test_property_holdings_balance_equals_escrow_balance_echidna_1() public {
+        shortcut_deployNewTokenPoolAndShare(0, 96393658749476385723357733546643215341366704676065917183446, false, false, false);
+        shortcut_deposit_sync(1, 60442435263903437);
+        property_holdings_balance_equals_escrow_balance();
+    }
+
+    // forge test --match-test test_property_holdings_balance_equals_escrow_balance_echidna_2 -vvv
+    // Echidna E2E reproducer #984593248541434999
+    // Category A: holdings != escrow balance after deposit_sync (non-zero price, SyncDepositVault)
+    function test_property_holdings_balance_equals_escrow_balance_echidna_2() public {
+        shortcut_deployNewTokenPoolAndShare(0, 1298111903202386810132492399622022, false, false, false);
+        shortcut_deposit_sync(1, 7364027);
+        property_holdings_balance_equals_escrow_balance();
+    }
+
+    // forge test --match-test test_dust_deposit_totalSupply_overflow -vvv
+    // Verify: can 1 wei dust deposits with low navPerShare overflow/DoS totalSupply?
+    function test_dust_deposit_totalSupply_overflow() public {
+        shortcut_deployNewTokenPoolAndShare(0, 1298111903202386810132492399622022, false, false, false);
+
+        IBaseVault vault = IBaseVault(_getVault());
+        IShareToken shareToken = IShareToken(vault.share());
+
+        console2.log("=== 1st dust deposit (1 wei, navPerShare=7364027) ===");
+        shortcut_deposit_sync(1, 7364027);
+        uint256 supply1 = shareToken.totalSupply();
+        console2.log("totalSupply after 1st:", supply1);
+        console2.log("uint128.max:", type(uint128).max);
+        console2.log("ratio (supply/max):", supply1 * 100 / uint256(type(uint128).max), "%");
+
+        console2.log("=== 2nd dust deposit (1 wei, navPerShare=7364027) ===");
+        // This should revert with ExceedsMaxSupply if totalSupply would exceed uint128.max
+        try this.do_deposit_sync(1, 7364027) {
+            uint256 supply2 = shareToken.totalSupply();
+            console2.log("totalSupply after 2nd:", supply2);
+            console2.log("2nd deposit SUCCEEDED - no overflow protection triggered!");
+        } catch (bytes memory reason) {
+            console2.log("2nd deposit REVERTED (expected: ExceedsMaxSupply)");
+            console2.log("DoS vector confirmed: 1 wei blocks all future deposits");
+        }
+    }
+
+    // forge test --match-test test_dust_deposit_extreme_low_price -vvv
+    // Verify: navPerShare=1 (minimum non-zero D18) with 1 wei deposit
+    function test_dust_deposit_extreme_low_price() public {
+        shortcut_deployNewTokenPoolAndShare(0, 1298111903202386810132492399622022, false, false, false);
+
+        IBaseVault vault = IBaseVault(_getVault());
+        IShareToken shareToken = IShareToken(vault.share());
+
+        console2.log("=== Extreme case: navPerShare=1 (D18: 1e-18) ===");
+        try this.do_deposit_sync(1, 1) {
+            uint256 supply = shareToken.totalSupply();
+            console2.log("totalSupply:", supply);
+            console2.log("uint128.max:", type(uint128).max);
+        } catch (bytes memory) {
+            console2.log("REVERTED - ExceedsMaxSupply on FIRST deposit with navPerShare=1");
+            console2.log("Single 1 wei deposit DoS confirmed at navPerShare=1");
+        }
+
+        console2.log("=== Moderate case: navPerShare=1e14 (MIN_PRICE from PricingLib tests) ===");
+        // Reset by deploying fresh - but we can't in this test, so just log the math
+        // shares = pricePoolPerAsset * 1 * 1e18 / (1e18 * 1e14) = pricePoolPerAsset / 1e14
+        // If pricePoolPerAsset ~ 1e18 -> shares ~ 1e4 (10000) - safe
+        console2.log("At MIN_PRICE=1e14: 1 wei deposit -> ~10000 shares (safe)");
+    }
+
+    // Helper to make a deposit callable via try/catch
+    function do_deposit_sync(uint256 assets, uint128 navPerShare) external {
+        shortcut_deposit_sync(assets, navPerShare);
+    }
+
+    // forge test --match-test test_debug_holdings_vs_escrow -vvv
+    // Deep-dive: trace deposit_sync flow to identify root cause
+    function test_debug_holdings_vs_escrow() public {
+        shortcut_deployNewTokenPoolAndShare(0, 1298111903202386810132492399622022, false, false, false);
+
+        IBaseVault vault = IBaseVault(_getVault());
+        address asset = vault.asset();
+        AssetId assetId = hubRegistry.currency(vault.poolId());
+        address poolEscrow = address(poolEscrowFactory.escrow(vault.poolId()));
+
+        console2.log("=== BEFORE deposit_sync ===");
+        (uint128 holdingBefore,,,) = holdings.holding(vault.poolId(), vault.scId(), assetId);
+        uint256 escrowBefore = MockERC20(asset).balanceOf(poolEscrow);
+        bool qDisabled = balanceSheet.queueDisabled(vault.poolId(), vault.scId());
+        console2.log("holdingAssetAmount:", holdingBefore);
+        console2.log("escrowBalance:", escrowBefore);
+        console2.log("queueDisabled:", qDisabled);
+
+        console2.log("=== deposit_sync(assets=1, navPerShare=7364027) ===");
+        uint256 sharesBefore = IShareToken(vault.share()).balanceOf(_getActor());
+        shortcut_deposit_sync(1, 7364027);
+        uint256 sharesAfter = IShareToken(vault.share()).balanceOf(_getActor());
+        console2.log("shares minted:", sharesAfter - sharesBefore);
+
+        console2.log("=== AFTER deposit_sync ===");
+        (uint128 holdingAfter,,,) = holdings.holding(vault.poolId(), vault.scId(), assetId);
+        uint256 escrowAfter = MockERC20(asset).balanceOf(poolEscrow);
+        console2.log("holdingAssetAmount:", holdingAfter);
+        console2.log("escrowBalance:", escrowAfter);
+        console2.log("delta holding:", holdingAfter - holdingBefore);
+        console2.log("delta escrow:", escrowAfter - escrowBefore);
+
+        // Check: is this a precondition inversion bug?
+        console2.log("=== ANALYSIS ===");
+        console2.log("Property checks when !queueDisabled =", !qDisabled);
+        console2.log("But _updateAssets only updates Holdings when queueDisabled = true");
+        console2.log("Comment says: 'if queue is enabled, holdings dont get updated until submitted'");
+        console2.log("=> Precondition is INVERTED: should be if(queueDisabled) not if(!queueDisabled)");
+    }
+
+    /// === Category B: property_totalAssets_solvency (Known ❌ #26) === ///
+
+    // forge test --match-test test_echidna_totalAssets_solvency_1 -vvv
+    // Echidna E2E #518862186988112175
+    function test_echidna_totalAssets_solvency_1() public {
+        shortcut_deployNewTokenPoolAndShare(0, 1386237286839671356000540000449486512450075797368185259496410981011355, true, false, false);
+        spoke_deployVault_clamped();
+        hub_updateSharePrice(222132857126451087, hex"00000000000000000000000000000000", 17535);
+        shortcut_deposit_and_cancel(36512601, 1036282021695511699692751134, 183726564367198340548773030622165509316593518938040152666045133820555468, 250, 8908809321817033694710154767);
+        balanceSheet_issue(573676402864885549621857444533);
+        property_totalAssets_solvency();
+    }
+
+    // forge test --match-test test_echidna_totalAssets_solvency_2 -vvv
+    // Echidna E2E #1127038780738260532
+    function test_echidna_totalAssets_solvency_2() public {
+        shortcut_deployNewTokenPoolAndShare(0, 317236330380788908058070585027213285140075594077453900670729569634020, true, false, false);
+        spoke_deployVault_clamped();
+        hub_updateSharePrice(441805741455, hex"00000000000000000000000000000000", 17535);
+        shortcut_deposit_and_cancel(573, 157309997219723664395722, 675006536620159792911744773139244048754920666982296274884072031175, 0, 2795564778656248368389132);
+        balanceSheet_issue(573676402864885549621857444533);
+        property_totalAssets_solvency();
+    }
+
+    /// === Category C: property_sum_of_minted_equals_total_supply (Known ❌ #16) === ///
+
+    // forge test --match-test test_echidna_sum_minted_total_supply_1 -vvv
+    // Echidna E2E #4993392222817840976
+    function test_echidna_sum_minted_total_supply_1() public {
+        shortcut_deployNewTokenPoolAndShare(0, 322451204253404809839657898545803571345631786866767406022329186129045401147, true, false, false);
+        hub_updateSharePrice(2177124214410, hex"000000000000000000000000000099c8", 1);
+        shortcut_request_deposit(24, 42146206658400722863123052399, 3453082117305778393197919140, 0);
+        asyncVault_maxDeposit(0, 0, 0);
+        property_sum_of_minted_equals_total_supply();
+    }
+
+    // forge test --match-test test_echidna_sum_minted_total_supply_2 -vvv
+    // Echidna E2E #7795426837052371256
+    function test_echidna_sum_minted_total_supply_2() public {
+        shortcut_deployNewTokenPoolAndShare(0, 130508301449249762209694475187923039512549434386556866755690097035, false, false, false);
+        hub_updateSharePrice(2407785, hex"00000000000000000000000000000000", 1);
+        shortcut_request_deposit(0, 118473478401259, 273210755874720251, 0);
+        asyncVault_maxDeposit(0, 0, 0);
+        property_sum_of_minted_equals_total_supply();
+    }
+
+    /// === Category D: property_escrow_balance (Known ❌ #23) === ///
+
+    // forge test --match-test test_echidna_escrow_balance_1 -vvv
+    // Echidna E2E #6931770679071936629
+    function test_echidna_escrow_balance_1() public {
+        shortcut_deployNewTokenPoolAndShare(0, 4350165491806115384477658572863476966825025853672927706678398890014806491, true, false, false);
+        hub_updateSharePrice(17582, hex"00000000000000000000000000000000", 2259097927806056812342429);
+        shortcut_request_deposit(45824, 140960648834710952802247129010, 1756215732643594611169716, 0);
+        asyncVault_maxDeposit(0, 0, 0);
+        property_escrow_balance();
+    }
+
+    // forge test --match-test test_echidna_escrow_balance_2 -vvv
+    // Echidna E2E #4928776995980949899
+    function test_echidna_escrow_balance_2() public {
+        shortcut_deployNewTokenPoolAndShare(0, 102102440359004603854514541888236606506951597997210388133637249, false, false, false);
+        hub_updateSharePrice(0, hex"00000000000000000000000000000000", 41646746162178);
+        shortcut_request_deposit(0, 8696248100709, 427403, 0);
+        asyncVault_maxDeposit(0, 0, 0);
+        property_escrow_balance();
+    }
+
 }

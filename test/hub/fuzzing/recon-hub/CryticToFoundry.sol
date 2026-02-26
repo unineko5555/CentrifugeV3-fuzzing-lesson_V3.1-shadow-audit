@@ -271,4 +271,35 @@ contract CryticToFoundry is Test, TargetFunctions, FoundryAsserts {
         property_loss_soundness();
 
     }
+
+    /// === ECHIDNA REPRODUCERS (2026-02-20 run) === ///
+
+    // Echidna reproducer: 2446825258825498647
+    // Property: totalDebit/totalCredit exceeds int128 max after large holding amount update
+    function test_echidna_totalDebit_exceeds_int128_max() public {
+        shortcut_create_pool_and_update_holding(6, 1, 2, true, 1);
+        hub_updateHoldingAmount_clamped(0, 0, 0, 170315956445675341242596003749085484523, 0);
+        hub_addShareClass_clamped(0, 1);
+        hub_updateHoldingValue_clamped(0, 0);
+        property_account_totalDebit_and_totalCredit_leq_max_int128();
+    }
+
+    // Echidna reproducer: 6119269137626686743
+    // Property: accountValue increased when valuation decreased (isDebitNormal=true)
+    function test_echidna_decrease_valuation_increases_accountValue() public {
+        shortcut_create_pool_and_holding(6, 1, 2, true);
+        hub_addShareClass_clamped(0, 1);
+        hub_updateHoldingAmount_clamped(0, 0, 0, 1, 2002461553125679683);
+        hub_updateHoldingValue_clamped(0, 0);
+        property_decrease_valuation_no_increase_in_accountValue();
+    }
+
+    // Echidna reproducer: 1066467744778148207
+    // Property: user can mutate pending redeem when they shouldn't be able to
+    function test_echidna_user_mutates_pending_redeem() public {
+        shortcut_create_pool_and_update_holding_amount(6, 1, 2, false, 0, 0, 0, 0);
+        hub_addShareClass_clamped(0, 1);
+        hub_redeemRequest_clamped(0, 0, 1);
+        property_user_cannot_mutate_pending_redeem();
+    }
 }

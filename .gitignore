@@ -9,11 +9,16 @@ lcov.info
 .vscode
 deployments/latest
 lib/
+.serena
 
 ## Recon
 /medusa
 /crytic-export
 /echidna
+/echidna_core
+/echidna_hub
+/echidna_aggregator
+/echidna_e2e
 recon.json
 
 
