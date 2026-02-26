@@ -1,0 +1,24 @@
+# Recon Hub - Hub side fuzzing (Accounting, Holdings, ShareClassManager, BatchRequestManager, NAVManager)
+# Usage: FOUNDRY_PROFILE=echidna echidna . --contract CryticTester --config echidna_hub.yaml --format text --workers 16 --test-limit 100000000
+# Pre-build: FOUNDRY_PROFILE=echidna forge build --build-info --force
+
+testMode: "assertion"
+coverage: true
+corpusDir: "echidna-corpus/hub"
+balanceAddr: 0x10000
+balanceContract: 0x20000
+filterBlacklist: true
+filterFunctions: []
+shrinkLimit: 100000
+testLimit: 100000000
+seqLen: 200
+cryticArgs:
+  [
+    "--foundry-compile-all",
+    "--foundry-ignore-compile",
+    "--compile-libraries=(MathLib,0xf01)",
+  ]
+deployContracts:
+  [
+    ["0xf01", "MathLib"],
+  ]

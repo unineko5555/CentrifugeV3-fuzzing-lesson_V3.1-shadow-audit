@@ -5,3 +5,6 @@ protocol/lib
 protocol/out
 
 protocol-v3
+
+protocol/medusa-corpus
+protocol/echidna-corpus

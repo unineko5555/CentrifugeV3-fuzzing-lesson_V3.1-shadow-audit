@@ -1,0 +1,25 @@
+# Recon E2E - Hub+Spoke end-to-end fuzzing (full protocol with real messaging)
+# Usage: FOUNDRY_PROFILE=echidna echidna . --contract "test/integration/recon-end-to-end/CryticTester.sol:CryticTester" --config echidna_e2e.yaml --format text --workers 16 --test-limit 100000000
+# NOTE: Use full contract path to disambiguate from recon-core and recon-hub CryticTester
+# Pre-build: FOUNDRY_PROFILE=echidna forge build --build-info --force
+
+testMode: "assertion"
+coverage: true
+corpusDir: "echidna-corpus/e2e"
+balanceAddr: 0x10000
+balanceContract: 0x20000
+filterBlacklist: true
+filterFunctions: []
+shrinkLimit: 100000
+testLimit: 100000000
+seqLen: 300
+cryticArgs:
+  [
+    "--foundry-compile-all",
+    "--foundry-ignore-compile",
+    "--compile-libraries=(MathLib,0xf01)",
+  ]
+deployContracts:
+  [
+    ["0xf01", "MathLib"],
+  ]

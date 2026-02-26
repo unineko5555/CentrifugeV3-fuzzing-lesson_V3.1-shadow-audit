@@ -40,6 +40,9 @@ ignored_warnings_from = [
 
 dynamic_test_linking = true
 
+[profile.echidna]
+dynamic_test_linking = false
+
 [profile.default.lint]
 severity = ["high"]
 exclude_lints = ["erc20-unchecked-transfer", "incorrect-shift"]

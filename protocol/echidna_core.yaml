@@ -1,0 +1,25 @@
+# Recon Core - Spoke side fuzzing (AsyncVault, AsyncRequestManager, SyncManager, Spoke, ShareToken, BalanceSheet, PoolEscrow, VaultRegistry, FullRestrictions)
+# Usage: FOUNDRY_PROFILE=echidna echidna . --contract "test/vaults/fuzzing/recon-core/CryticTester.sol:CryticTester" --config echidna_core.yaml --format text --workers 16 --test-limit 100000000
+# NOTE: Use full contract path to disambiguate from recon-hub CryticTester
+# Pre-build: FOUNDRY_PROFILE=echidna forge build --build-info --force
+
+testMode: "assertion"
+coverage: true
+corpusDir: "echidna-corpus/core"
+balanceAddr: 0x10000
+balanceContract: 0x20000
+filterBlacklist: true
+filterFunctions: []
+shrinkLimit: 100000
+testLimit: 100000000
+seqLen: 200
+cryticArgs:
+  [
+    "--foundry-compile-all",
+    "--foundry-ignore-compile",
+    "--compile-libraries=(MathLib,0xf01)",
+  ]
+deployContracts:
+  [
+    ["0xf01", "MathLib"],
+  ]
