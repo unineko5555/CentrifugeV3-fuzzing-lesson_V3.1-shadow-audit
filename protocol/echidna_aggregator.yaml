@@ -1,5 +1,5 @@
 # Recon Aggregator - Gateway/MultiAdapter messaging layer fuzzing
-# Usage: FOUNDRY_PROFILE=echidna echidna . --contract "test/messaging/fuzzing/recon-aggregator/CryticTester.sol:CryticTester" --config echidna_aggregator.yaml --format text --workers 16 --test-limit 100000000
+# Usage: FOUNDRY_PROFILE=echidna echidna . --contract CryticAggregatorTester --config echidna_aggregator.yaml --format text --workers 16 --test-limit 100000000
 # Pre-build: FOUNDRY_PROFILE=echidna forge build --build-info --force
 
 testMode: "assertion"

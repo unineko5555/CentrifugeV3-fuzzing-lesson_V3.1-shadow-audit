@@ -4,9 +4,9 @@ pragma solidity ^0.8.28;
 import {TargetFunctions} from "./TargetFunctions.sol";
 import {CryticAsserts} from "@chimera/CryticAsserts.sol";
 
-/// @title CryticTester
+/// @title CryticE2ETester
 /// @notice Entry point for Echidna and Medusa E2E fuzzing.
-contract CryticTester is TargetFunctions, CryticAsserts {
+contract CryticE2ETester is TargetFunctions, CryticAsserts {
     constructor() payable {
         setup();
     }

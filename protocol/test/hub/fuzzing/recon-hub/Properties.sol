@@ -176,6 +176,8 @@ abstract contract Properties is BeforeAfter, Asserts {
     }
 
     /// @dev P-BRM-8a: After issueShares, epochInvestAmounts.issuedAt > 0
+    ///      ghostEpochId stores raw epochId.issue (the LAST PROCESSED epoch).
+    ///      nowIssueEpoch() = epochId.issue + 1, so raw epochId IS the processed epoch.
     function property_brm_issue_consistency() public {
         for (uint256 i = 0; i < createdPools.length; i++) {
             PoolId poolId = createdPools[i];
@@ -183,16 +185,13 @@ abstract contract Properties is BeforeAfter, Asserts {
                 ShareClassId scId = shareClassManager.previewShareClassId(poolId, j);
                 AssetId assetId = hubRegistry.currency(poolId);
 
-                uint32 nowIssueEpoch = _after.ghostEpochId[poolId][scId][assetId].issue;
-                if (nowIssueEpoch == 0) continue;
+                uint32 lastProcessedIssueEpoch = _after.ghostEpochId[poolId][scId][assetId].issue;
+                if (lastProcessedIssueEpoch == 0) continue;
 
-                // If issue epoch advanced, the previous epoch should have issuedAt set
-                if (
-                    _after.ghostEpochId[poolId][scId][assetId].issue
-                        > _before.ghostEpochId[poolId][scId][assetId].issue
-                ) {
-                    uint32 prevEpoch = nowIssueEpoch - 1;
-                    (,,,,, uint64 issuedAt) = brm.epochInvestAmounts(poolId, scId, assetId, prevEpoch);
+                // If issue epoch advanced, the processed epoch should have issuedAt set
+                if (lastProcessedIssueEpoch > _before.ghostEpochId[poolId][scId][assetId].issue) {
+                    (,,,,, uint64 issuedAt) =
+                        brm.epochInvestAmounts(poolId, scId, assetId, lastProcessedIssueEpoch);
                     t(issuedAt > 0, "P-BRM-8a: issuedAt == 0 after issueShares");
                 }
             }
@@ -200,6 +199,7 @@ abstract contract Properties is BeforeAfter, Asserts {
     }
 
     /// @dev P-BRM-8b: After revokeShares, epochRedeemAmounts.revokedAt > 0
+    ///      ghostEpochId stores raw epochId.revoke (the LAST PROCESSED epoch).
     function property_brm_revoke_consistency() public {
         for (uint256 i = 0; i < createdPools.length; i++) {
             PoolId poolId = createdPools[i];
@@ -207,16 +207,13 @@ abstract contract Properties is BeforeAfter, Asserts {
                 ShareClassId scId = shareClassManager.previewShareClassId(poolId, j);
                 AssetId assetId = hubRegistry.currency(poolId);
 
-                uint32 nowRevokeEpoch = _after.ghostEpochId[poolId][scId][assetId].revoke;
-                if (nowRevokeEpoch == 0) continue;
+                uint32 lastProcessedRevokeEpoch = _after.ghostEpochId[poolId][scId][assetId].revoke;
+                if (lastProcessedRevokeEpoch == 0) continue;
 
-                // If revoke epoch advanced, the previous epoch should have revokedAt set
-                if (
-                    _after.ghostEpochId[poolId][scId][assetId].revoke
-                        > _before.ghostEpochId[poolId][scId][assetId].revoke
-                ) {
-                    uint32 prevEpoch = nowRevokeEpoch - 1;
-                    (,,,,, uint64 revokedAt) = brm.epochRedeemAmounts(poolId, scId, assetId, prevEpoch);
+                // If revoke epoch advanced, the processed epoch should have revokedAt set
+                if (lastProcessedRevokeEpoch > _before.ghostEpochId[poolId][scId][assetId].revoke) {
+                    (,,,,, uint64 revokedAt) =
+                        brm.epochRedeemAmounts(poolId, scId, assetId, lastProcessedRevokeEpoch);
                     t(revokedAt > 0, "P-BRM-8b: revokedAt == 0 after revokeShares");
                 }
             }

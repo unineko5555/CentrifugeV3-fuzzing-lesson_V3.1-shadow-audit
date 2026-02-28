@@ -1,21 +1,17 @@
 {
   "fuzzing": {
-    "workers": 10,
+    "workers": 16,
     "workerResetLimit": 50,
     "timeout": 0,
     "testLimit": 0,
     "callSequenceLength": 200,
     "corpusDirectory": "medusa-corpus/aggregator",
     "coverageEnabled": true,
-    "targetContracts": ["AggregatorCryticTester"],
+    "targetContracts": ["CryticAggregatorTester"],
     "targetContractsBalances": ["0x10000000000000000000"],
     "constructorArgs": {},
     "deployerAddress": "0x30000",
-    "senderAddresses": [
-      "0x10000",
-      "0x20000",
-      "0x30000"
-    ],
+    "senderAddresses": ["0x10000", "0x20000", "0x30000"],
     "blockNumberDelayMax": 60480,
     "blockTimestampDelayMax": 604800,
     "transactionGasLimit": 12500000,
@@ -62,7 +58,11 @@
       "target": ".",
       "solcVersion": "",
       "exportDirectory": "",
-      "args": ["--compile-force-framework", "foundry", "--foundry-compile-all"]
+      "args": [
+        "--compile-force-framework",
+        "foundry",
+        "--foundry-compile-all"
+      ]
     }
   }
 }

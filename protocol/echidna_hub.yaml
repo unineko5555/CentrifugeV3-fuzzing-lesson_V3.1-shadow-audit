@@ -1,5 +1,5 @@
 # Recon Hub - Hub side fuzzing (Accounting, Holdings, ShareClassManager, BatchRequestManager, NAVManager)
-# Usage: FOUNDRY_PROFILE=echidna echidna . --contract CryticTester --config echidna_hub.yaml --format text --workers 16 --test-limit 100000000
+# Usage: FOUNDRY_PROFILE=echidna echidna . --contract CryticHubTester --config echidna_hub.yaml --format text --workers 16 --test-limit 100000000
 # Pre-build: FOUNDRY_PROFILE=echidna forge build --build-info --force
 
 testMode: "assertion"

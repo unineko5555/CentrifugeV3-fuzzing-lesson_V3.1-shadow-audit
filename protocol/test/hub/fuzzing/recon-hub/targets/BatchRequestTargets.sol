@@ -45,8 +45,17 @@ abstract contract BatchRequestTargets is BaseTargetFunctions, Properties {
             // and lastUpdate stays at the old epoch. This is expected BRM behavior.
             lte(lastUpdate, nowDepositEpoch, "BRM: lastUpdate > nowDepositEpoch after requestDeposit");
         } catch (bytes memory reason) {
-            uint128 pendingDeposit = brm.pendingDeposit(poolId, scId, assetId);
-            if (uint256(pendingDeposit) + uint256(amount) < uint256(type(uint128).max)) {
+            // Check all known uint128 addition overflow paths in BRM._updatePending / _updateQueued:
+            //   1. globalPending + amount  (pendingDeposit aggregation)
+            //   2. userOrder.pending + amount  (direct pending mutation, line 828)
+            //   3. queued.amount + amount  (queued path, line 880)
+            uint128 globalPending = brm.pendingDeposit(poolId, scId, assetId);
+            (uint128 userPending,) = brm.depositRequest(poolId, scId, assetId, investor);
+            (, uint128 queuedAmount) = brm.queuedDepositRequest(poolId, scId, assetId, investor);
+            bool couldOverflow = (uint256(globalPending) + uint256(amount) >= uint256(type(uint128).max))
+                || (uint256(userPending) + uint256(amount) >= uint256(type(uint128).max))
+                || (uint256(queuedAmount) + uint256(amount) >= uint256(type(uint128).max));
+            if (!couldOverflow) {
                 bool arithmeticRevert = checkError(reason, Panic.arithmeticPanic);
                 t(!arithmeticRevert, "BRM: requestDeposit arithmetic panic (not overflow)");
             }

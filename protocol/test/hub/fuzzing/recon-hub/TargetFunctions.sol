@@ -20,6 +20,7 @@ import {IHubRequestManager} from "src/core/hub/interfaces/IHubRequestManager.sol
 // Targets
 import {AdminTargets} from "./targets/AdminTargets.sol";
 import {HubTargets} from "./targets/HubTargets.sol";
+import {HubHandlerTargets} from "./targets/HubHandlerTargets.sol";
 import {BatchRequestTargets} from "./targets/BatchRequestTargets.sol";
 import {NAVTargets} from "./targets/NAVTargets.sol";
 import {ManagerTargets} from "./targets/ManagerTargets.sol";
@@ -28,10 +29,12 @@ import {DoomsdayTargets} from "./targets/DoomsdayTargets.sol";
 
 // Utils
 import {Helpers} from "./utils/Helpers.sol";
+import {OpType} from "./BeforeAfter.sol";
 
 abstract contract TargetFunctions is
     AdminTargets,
     HubTargets,
+    HubHandlerTargets,
     BatchRequestTargets,
     NAVTargets,
     ManagerTargets,
@@ -65,6 +68,9 @@ abstract contract TargetFunctions is
 
         // Setup NAVManager as manager
         navManager.updateManager(poolId, address(this), true);
+
+        // Setup OracleValuation: make test contract a feeder for this pool
+        oracleValuation.updateFeeder(poolId, address(this), true);
 
         // Create share class and holding
         scId = shareClassManager.previewNextShareClassId(poolId);
@@ -249,13 +255,75 @@ abstract contract TargetFunctions is
         mockValuation_setPrice(poolId.raw(), scId.raw(), assetId.raw(), price);
     }
 
-    /// @dev OracleValuation price setter
+    /// @dev OracleValuation price setter (raw)
     function oracleValuation_setPrice(uint64 poolIdAsUint, bytes16 scIdAsBytes, uint128 assetIdAsUint, uint128 price)
         public
+        updateGhostsWithType(OpType.SET_ORACLE_PRICE)
     {
         oracleValuation.setPrice(
             PoolId.wrap(poolIdAsUint), ShareClassId.wrap(scIdAsBytes), AssetId.wrap(assetIdAsUint), D18.wrap(price)
         );
+    }
+
+    /// @dev OracleValuation price setter (clamped) — internally calls hub.updateHoldingValue
+    function oracleValuation_setPrice_clamped(uint64 poolIdEntropy, uint32 scEntropy, uint128 price)
+        public
+        updateGhostsWithType(OpType.SET_ORACLE_PRICE)
+    {
+        PoolId poolId = _getRandomPoolId(poolIdEntropy);
+        ShareClassId scId = _getRandomShareClassIdForPool(poolId, scEntropy);
+        AssetId assetId = hubRegistry.currency(poolId);
+        // Clamp price to reasonable range
+        price = uint128(uint256(price) % 1000e18) + 1e15;
+        oracleValuation.setPrice(poolId, scId, assetId, D18.wrap(price));
+    }
+
+    /// @dev Create pool + share class + holding with OracleValuation
+    function shortcut_create_oracle_pool_and_holding(uint8 decimals, uint32 isoCode, uint256 salt)
+        public
+        clearQueuedCalls
+        returns (PoolId poolId, ShareClassId scId)
+    {
+        decimals %= 24;
+        require(decimals >= 6, "decimals must be >= 6");
+
+        // Add and register asset
+        add_new_asset(decimals);
+        uint128 encodedAssetId = newAssetId(CENTRIFUGE_CHAIN_ID, isoCode).raw();
+        hub_registerAsset(encodedAssetId);
+
+        // Create pool
+        uint64 rawPoolId = uint64(uint64(CENTRIFUGE_CHAIN_ID) << 48) | uint64(POOL_ID_COUNTER++);
+        poolId = hub_createPool(address(this), rawPoolId, encodedAssetId);
+
+        // Setup BRM as request manager for this pool
+        hubRegistry.updateManager(poolId, address(this), true);
+        hubRegistry.setHubRequestManager(poolId, CENTRIFUGE_CHAIN_ID, IHubRequestManager(address(brm)));
+        hubRegistry.updateManager(poolId, address(brm), true);
+
+        // Setup NAVManager + OracleValuation feeder
+        navManager.updateManager(poolId, address(this), true);
+        oracleValuation.updateFeeder(poolId, address(this), true);
+
+        // Create share class
+        scId = shareClassManager.previewNextShareClassId(poolId);
+        hub_addShareClass(poolId.raw(), salt);
+
+        // Create accounts + initialize holding with OracleValuation
+        hub_createAccount(poolId.raw(), ASSET_ACCOUNT, IS_DEBIT_NORMAL);
+        hub_createAccount(poolId.raw(), EQUITY_ACCOUNT, IS_DEBIT_NORMAL);
+        hub_createAccount(poolId.raw(), LOSS_ACCOUNT, IS_DEBIT_NORMAL);
+        hub_createAccount(poolId.raw(), GAIN_ACCOUNT, IS_DEBIT_NORMAL);
+
+        hub_initializeHolding(
+            poolId.raw(), scId.raw(), IValuation(address(oracleValuation)),
+            ASSET_ACCOUNT, EQUITY_ACCOUNT, LOSS_ACCOUNT, GAIN_ACCOUNT
+        );
+
+        // Set initial oracle price so getPrice/getQuote don't revert
+        oracleValuation.setPrice(poolId, scId, AssetId.wrap(encodedAssetId), INITIAL_PRICE);
+
+        return (poolId, scId);
     }
 
     /// @dev Gateway subsidy

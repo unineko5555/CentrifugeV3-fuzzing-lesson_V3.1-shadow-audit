@@ -190,6 +190,9 @@ abstract contract Setup is BaseSetup, ActorManager, AssetManager, Utils {
         shareClassManager.rely(address(hubHandler));
         hub.rely(address(hubHandler));
 
+        // Test contract can call HubHandler auth functions (gateway callback simulation)
+        hubHandler.rely(address(this));
+
         // BatchRequestManager needs auth on hubRegistry (for manager checks)
         hubRegistry.rely(address(brm));
 

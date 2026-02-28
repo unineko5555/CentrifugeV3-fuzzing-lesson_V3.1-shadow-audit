@@ -5,9 +5,9 @@ import {CryticAsserts} from "@chimera/CryticAsserts.sol";
 
 import {TargetFunctions} from "./TargetFunctions.sol";
 
-// FOUNDRY_PROFILE=echidna echidna . --contract CryticTester --config echidna_hub.yaml
-// medusa fuzz --config medusa/hub.json
-contract CryticTester is TargetFunctions, CryticAsserts {
+// FOUNDRY_PROFILE=echidna echidna . --contract CryticHubTester --config echidna_hub.yaml
+// FOUNDRY_PROFILE=echidna medusa fuzz --config medusa_hub.json
+contract CryticHubTester is TargetFunctions, CryticAsserts {
     constructor() payable {
         setup();
     }
