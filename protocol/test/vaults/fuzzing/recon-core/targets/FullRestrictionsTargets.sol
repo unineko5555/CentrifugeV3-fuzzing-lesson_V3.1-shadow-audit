@@ -23,4 +23,10 @@ abstract contract FullRestrictionsTargets is BaseTargetFunctions, Properties {
     function fullRestrictions_unfreeze(address) public asAdmin {
         fullRestrictions.unfreeze(address(token), _getActor());
     }
+
+    /// @dev Freeze an arbitrary actor (not just current) — widens freeze coverage
+    function fullRestrictions_freezeArbitrary(uint256 actorEntropy) public asAdmin {
+        address target = _getRandomActor(actorEntropy);
+        fullRestrictions.freeze(address(token), target);
+    }
 }

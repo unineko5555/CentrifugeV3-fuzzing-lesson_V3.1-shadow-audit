@@ -107,6 +107,8 @@ abstract contract Setup is BaseSetup, ActorManager, AssetManager, Utils {
     uint32 internal EQUITY_ACCOUNT = 2;
     uint32 internal LOSS_ACCOUNT = 3;
     uint32 internal GAIN_ACCOUNT = 4;
+    uint32 internal EXPENSE_ACCOUNT = 5;
+    uint32 internal LIABILITY_ACCOUNT = 6;
     uint64 internal POOL_ID_COUNTER = 1;
     uint32 internal NOW_EPOCH_ID = 0;
 

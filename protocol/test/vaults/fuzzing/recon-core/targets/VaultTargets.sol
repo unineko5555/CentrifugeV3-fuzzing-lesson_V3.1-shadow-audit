@@ -7,6 +7,9 @@ import {MockERC20} from "@recon/MockERC20.sol";
 
 import {AsyncVault} from "src/vaults/AsyncVault.sol";
 import {PoolId} from "src/core/types/PoolId.sol";
+import {ShareClassId} from "src/core/types/ShareClassId.sol";
+import {AssetId} from "src/core/types/AssetId.sol";
+import {PoolEscrow} from "src/core/spoke/PoolEscrow.sol";
 
 import {Properties} from "../properties/Properties.sol";
 
@@ -31,19 +34,29 @@ abstract contract VaultTargets is BaseTargetFunctions, Properties {
         bool hasReverted;
         vm.prank(_getActor());
         try vault.requestDeposit(assets, to, _getActor()) {
-            sumOfDepositRequests[address(_getAsset())] += assets;
-            requestDepositAssets[_getActor()][address(_getAsset())] += assets;
+            // Use vault.asset() (fixed) not _getAsset() (switchable) for consistent ghost keying
+            sumOfDepositRequests[vault.asset()] += assets;
+            requestDepositAssets[_getActor()][vault.asset()] += assets;
         } catch {
             hasReverted = true;
         }
 
-        (bool isMember,) = fullRestrictions.isMember(address(token), _getActor());
-        if (!isMember) {
-            t(hasReverted, "LP-1 Must Revert");
+        // LP-1: Non-member must revert (only under FullRestrictions; endorsement bypasses membership)
+        if (address(token.hook()) == address(fullRestrictions)) {
+            (bool isMember,) = fullRestrictions.isMember(address(token), _getActor());
+            if (!isMember && !root.endorsed(_getActor())) {
+                t(hasReverted, "LP-1 Must Revert");
+            }
         }
+        // LP-2: Frozen must revert — only under FullRestrictions.
+        // Endorsed addresses (including CryticTester) bypass frozen check in the hook.
         if (
-            fullRestrictions.isFrozen(address(token), _getActor()) == true
-                || fullRestrictions.isFrozen(address(token), to) == true
+            address(token.hook()) == address(fullRestrictions)
+                && !root.endorsed(address(this))
+                && (
+                    fullRestrictions.isFrozen(address(token), _getActor()) == true
+                        || fullRestrictions.isFrozen(address(token), to) == true
+                )
         ) {
             t(hasReverted, "LP-2 Must Revert");
         }
@@ -79,9 +92,15 @@ abstract contract VaultTargets is BaseTargetFunctions, Properties {
             hasReverted = true;
         }
 
+        // LP-2: Frozen must revert — only under FullRestrictions.
+        // Endorsed addresses (including CryticTester) bypass frozen check in the hook.
         if (
-            fullRestrictions.isFrozen(address(token), _getActor()) == true
-                || fullRestrictions.isFrozen(address(token), to) == true
+            address(token.hook()) == address(fullRestrictions)
+                && !root.endorsed(address(this))
+                && (
+                    fullRestrictions.isFrozen(address(token), _getActor()) == true
+                        || fullRestrictions.isFrozen(address(token), to) == true
+                )
         ) {
             t(hasReverted, "LP-2 Must Revert");
         }
@@ -114,7 +133,8 @@ abstract contract VaultTargets is BaseTargetFunctions, Properties {
     function vault_claimCancelDepositRequest(uint256 toEntropy) public updateGhosts asActor {
         address to = _getRandomActor(toEntropy);
         uint256 assets = vault.claimCancelDepositRequest(REQUEST_ID, to, _getActor());
-        sumOfClaimedDepositCancelations[address(_getAsset())] += assets;
+        // Use vault.asset() (fixed) not _getAsset() (switchable) for consistent ghost keying
+        sumOfClaimedDepositCancelations[vault.asset()] += assets;
     }
 
     function vault_claimCancelRedeemRequest(uint256 toEntropy) public updateGhosts asActor {
@@ -147,6 +167,18 @@ abstract contract VaultTargets is BaseTargetFunctions, Properties {
         }
     }
 
+    /// @dev Deposit on behalf of another user via operator approval (ERC-7540 operator path)
+    function vault_deposit_as_operator(uint256 assets, uint256 ownerEntropy) public updateGhosts {
+        address owner = _getRandomActor(ownerEntropy);
+        if (owner == _getActor()) return; // same as normal deposit
+        if (!vault.isOperator(owner, _getActor())) return; // must be approved operator
+
+        vm.prank(_getActor());
+        try vault.deposit(assets, owner) returns (uint256 shares) {
+            sumOfClaimedDeposits[address(token)] += shares;
+        } catch {}
+    }
+
     function vault_mint(uint256 shares, uint256 toEntropy) public updateGhosts {
         address to = _getRandomActor(toEntropy);
         uint256 shareUserB4 = token.balanceOf(_getActor());
@@ -173,49 +205,141 @@ abstract contract VaultTargets is BaseTargetFunctions, Properties {
     function vault_redeem(uint256 shares, uint256 toEntropy) public updateGhosts {
         address to = _getRandomActor(toEntropy);
         address poolEscrowAddr = address(balanceSheet.escrow(PoolId.wrap(poolId)));
-        uint256 tokenUserB4 = MockERC20(_getAsset()).balanceOf(_getActor());
-        uint256 tokenEscrowB4 = MockERC20(_getAsset()).balanceOf(poolEscrowAddr);
+
+        // Skip if receiver IS the poolEscrow or globalEscrow — self-transfer makes delta measurement meaningless
+        if (to == poolEscrowAddr || to == address(escrow)) return;
+
+        // PE_5: snapshot reserved before
+        uint128 reservedBefore;
+        {
+            (address peAsset, uint256 peTokenId) = spoke.idToAsset(AssetId.wrap(assetId));
+            (, reservedBefore) =
+                PoolEscrow(payable(poolEscrowAddr)).holding(ShareClassId.wrap(scId), peAsset, peTokenId);
+        }
+
+        // Use vault.asset() (fixed) — _getAsset() changes with switch_asset, breaking delta measurement
+        address vaultAsset = vault.asset();
+        uint256 tokenReceiverB4 = MockERC20(vaultAsset).balanceOf(to);
+        uint256 tokenEscrowB4 = MockERC20(vaultAsset).balanceOf(poolEscrowAddr);
 
         vm.prank(_getActor());
         uint256 assets = vault.redeem(shares, to, _getActor());
 
-        sumOfClaimedRedemptions[address(_getAsset())] += assets;
+        // Use vault.asset() (fixed) not _getAsset() (switchable) for consistent ghost keying
+        sumOfClaimedRedemptions[vaultAsset] += assets;
 
-        uint256 tokenUserAfter = MockERC20(_getAsset()).balanceOf(_getActor());
-        uint256 tokenEscrowAfter = MockERC20(_getAsset()).balanceOf(poolEscrowAddr);
+        // PE_5: track reserved delta (unreserve via ARM._withdraw)
+        {
+            (address peAsset, uint256 peTokenId) = spoke.idToAsset(AssetId.wrap(assetId));
+            (, uint128 reservedAfter) =
+                PoolEscrow(payable(poolEscrowAddr)).holding(ShareClassId.wrap(scId), peAsset, peTokenId);
+            if (reservedBefore > reservedAfter) {
+                ghostPoolEscrowReserved[keccak256(abi.encode(poolId, scId, peAsset, peTokenId))] -=
+                    (reservedBefore - reservedAfter);
+            }
+        }
+
+        uint256 tokenReceiverAfter = MockERC20(vaultAsset).balanceOf(to);
+        uint256 tokenEscrowAfter = MockERC20(vaultAsset).balanceOf(poolEscrowAddr);
 
         unchecked {
-            uint256 deltaUser = tokenUserAfter - tokenUserB4;
-            eq(deltaUser, assets, "FoT-1");
+            uint256 deltaReceiver = tokenReceiverAfter - tokenReceiverB4;
+            eq(deltaReceiver, assets, "FoT-1");
             uint256 deltaEscrow = tokenEscrowB4 - tokenEscrowAfter;
             if (RECON_EXACT_BAL_CHECK) {
-                eq(deltaUser, shares, "Extra LP-3");
+                eq(deltaReceiver, shares, "Extra LP-3");
             }
-            eq(deltaUser, deltaEscrow, "7540-14");
+            eq(deltaReceiver, deltaEscrow, "7540-14");
         }
     }
 
     function vault_withdraw(uint256 assets, uint256 toEntropy) public updateGhosts {
         address to = _getRandomActor(toEntropy);
         address poolEscrowAddr = address(balanceSheet.escrow(PoolId.wrap(poolId)));
-        uint256 tokenUserB4 = MockERC20(_getAsset()).balanceOf(_getActor());
-        uint256 tokenEscrowB4 = MockERC20(_getAsset()).balanceOf(poolEscrowAddr);
+
+        // Skip if receiver IS the poolEscrow or globalEscrow — self-transfer makes delta measurement meaningless
+        if (to == poolEscrowAddr || to == address(escrow)) return;
+
+        // PE_5: snapshot reserved before
+        uint128 reservedBefore;
+        {
+            (address peAsset, uint256 peTokenId) = spoke.idToAsset(AssetId.wrap(assetId));
+            (, reservedBefore) =
+                PoolEscrow(payable(poolEscrowAddr)).holding(ShareClassId.wrap(scId), peAsset, peTokenId);
+        }
+
+        // Use vault.asset() (fixed) — _getAsset() changes with switch_asset, breaking delta measurement
+        address vaultAsset = vault.asset();
+        uint256 tokenReceiverB4 = MockERC20(vaultAsset).balanceOf(to);
+        uint256 tokenEscrowB4 = MockERC20(vaultAsset).balanceOf(poolEscrowAddr);
 
         vm.prank(_getActor());
         vault.withdraw(assets, to, _getActor());
 
-        sumOfClaimedRedemptions[address(_getAsset())] += assets;
+        // Use vault.asset() (fixed) not _getAsset() (switchable) for consistent ghost keying
+        sumOfClaimedRedemptions[vaultAsset] += assets;
 
-        uint256 tokenUserAfter = MockERC20(_getAsset()).balanceOf(_getActor());
-        uint256 tokenEscrowAfter = MockERC20(_getAsset()).balanceOf(poolEscrowAddr);
+        // PE_5: track reserved delta (unreserve via ARM._withdraw)
+        {
+            (address peAsset, uint256 peTokenId) = spoke.idToAsset(AssetId.wrap(assetId));
+            (, uint128 reservedAfter) =
+                PoolEscrow(payable(poolEscrowAddr)).holding(ShareClassId.wrap(scId), peAsset, peTokenId);
+            if (reservedBefore > reservedAfter) {
+                ghostPoolEscrowReserved[keccak256(abi.encode(poolId, scId, peAsset, peTokenId))] -=
+                    (reservedBefore - reservedAfter);
+            }
+        }
+
+        uint256 tokenReceiverAfter = MockERC20(vaultAsset).balanceOf(to);
+        uint256 tokenEscrowAfter = MockERC20(vaultAsset).balanceOf(poolEscrowAddr);
 
         unchecked {
-            uint256 deltaUser = tokenUserAfter - tokenUserB4;
+            uint256 deltaReceiver = tokenReceiverAfter - tokenReceiverB4;
             uint256 deltaEscrow = tokenEscrowB4 - tokenEscrowAfter;
             if (RECON_EXACT_BAL_CHECK) {
-                eq(deltaUser, assets, "Extra LP-3");
+                eq(deltaReceiver, assets, "Extra LP-3");
             }
-            eq(deltaUser, deltaEscrow, "7540-14");
+            eq(deltaReceiver, deltaEscrow, "7540-14");
         }
+    }
+
+    // === OPERATOR === //
+
+    /// @dev Set operator approval on vault (ERC-7540)
+    function vault_setOperator(address operator, bool approved) public asActor {
+        if (operator == _getActor()) return; // CannotSetSelfAsOperator
+        vault.setOperator(operator, approved);
+    }
+
+    // === VIEW TARGETS === //
+
+    /// @dev BaseVaults + AsyncVault view coverage
+    function vault_views() public view {
+        address actor = _getActor();
+        try vault.DOMAIN_SEPARATOR() {} catch {} // EIP-712
+        try vault.supportsInterface(bytes4(0x2f0a18c5)) {} catch {} // IERC7575
+        try vault.supportsInterface(bytes4(0x01ffc9a7)) {} catch {} // IERC165
+        try vault.priceLastUpdated() {} catch {}
+        try vault.isPermissioned(actor) {} catch {}
+        try vault.pendingRedeemRequest(0, actor) {} catch {}
+        try vault.claimableRedeemRequest(0, actor) {} catch {}
+        try vault.pendingCancelRedeemRequest(0, actor) {} catch {}
+        try vault.claimableCancelRedeemRequest(0, actor) {} catch {}
+        try vault.pendingDepositRequest(0, actor) {} catch {}
+        try vault.claimableDepositRequest(0, actor) {} catch {}
+        try vault.pendingCancelDepositRequest(0, actor) {} catch {}
+        try vault.claimableCancelDepositRequest(0, actor) {} catch {}
+        try vault.previewDeposit(1e18) {} catch {}
+        try vault.previewMint(1e18) {} catch {}
+        try vault.previewWithdraw(1e18) {} catch {}
+        try vault.previewRedeem(1e18) {} catch {}
+        try vault.maxDeposit(actor) {} catch {}
+        try vault.maxMint(actor) {} catch {}
+    }
+
+    /// @dev ShareToken view coverage
+    function token_views() public view {
+        try token.messageForTransferRestriction(0) {} catch {}
+        try token.supportsInterface(bytes4(0x01ffc9a7)) {} catch {}
     }
 }

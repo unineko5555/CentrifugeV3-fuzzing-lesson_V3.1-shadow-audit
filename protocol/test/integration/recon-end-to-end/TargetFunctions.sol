@@ -21,6 +21,15 @@ import {ShareTokenTargets} from "./targets/ShareTokenTargets.sol";
 import {DoomsdayTargets} from "./targets/DoomsdayTargets.sol";
 import {QueueManagerTargets} from "./targets/QueueManagerTargets.sol";
 
+// Wave 4 targets
+import {PriceAgeTargets} from "./targets/PriceAgeTargets.sol";
+import {LiabilityTargets} from "./targets/LiabilityTargets.sol";
+import {JournalTargets} from "./targets/JournalTargets.sol";
+
+// Wave 5 targets
+import {SyncManagerTargets} from "./targets/SyncManagerTargets.sol";
+import {HubNotificationTargets} from "./targets/HubNotificationTargets.sol";
+
 /// @title TargetFunctions
 /// @notice Composition of all target function modules for the E2E suite.
 abstract contract TargetFunctions is
@@ -39,7 +48,14 @@ abstract contract TargetFunctions is
     PoolEscrowTargets,
     ShareTokenTargets,
     DoomsdayTargets,
-    QueueManagerTargets
+    QueueManagerTargets,
+    // Wave 4 (Coverage expansion)
+    PriceAgeTargets,
+    LiabilityTargets,
+    JournalTargets,
+    // Wave 5 (Coverage expansion: SyncManager + Hub notifications)
+    SyncManagerTargets,
+    HubNotificationTargets
 {
     // ===================================================================
     // Canary Invariants (verify fuzzer reaches interesting states)

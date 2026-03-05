@@ -29,6 +29,7 @@ import {PoolEscrowFactory} from "src/core/spoke/factories/PoolEscrowFactory.sol"
 
 // Hooks
 import {FullRestrictions} from "src/hooks/FullRestrictions.sol";
+import {FreelyTransferable} from "src/hooks/FreelyTransferable.sol";
 
 // Types
 import {IEscrow} from "src/misc/interfaces/IEscrow.sol";
@@ -71,6 +72,7 @@ abstract contract Setup is BaseSetup, SharedStorage, ActorManager, AssetManager 
 
     // Hooks
     FullRestrictions public fullRestrictions;
+    FreelyTransferable public altHook; // second valid hook for updateShareHook toggle
 
     // Active vault/token (set by deployNewTokenPoolAndShare)
     AsyncVault public vault;
@@ -180,6 +182,16 @@ abstract contract Setup is BaseSetup, SharedStorage, ActorManager, AssetManager 
             address(this)
         );
 
+        // 12. Deploy FreelyTransferable (alt hook for spoke_updateShareHook toggle)
+        altHook = new FreelyTransferable(
+            address(root),
+            address(spoke),
+            address(balanceSheet),
+            address(escrow),
+            address(spoke) == address(escrow) ? address(this) : address(spoke),
+            address(this)
+        );
+
         // ===== file() wiring ===== //
 
         // Spoke dependencies
@@ -239,8 +251,9 @@ abstract contract Setup is BaseSetup, SharedStorage, ActorManager, AssetManager 
         escrow.rely(address(spoke));
         escrow.rely(address(balanceSheet));
 
-        // FullRestrictions: spoke updates restrictions
+        // Hooks: spoke updates restrictions
         fullRestrictions.rely(address(spoke));
+        altHook.rely(address(spoke));
 
         // VaultRegistry: spoke is auth'd
         vaultRegistry.rely(address(spoke));

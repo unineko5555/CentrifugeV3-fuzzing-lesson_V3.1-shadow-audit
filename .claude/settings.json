@@ -2,6 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(forge test:*)"
+    ],
+    "additionalDirectories": [
+      "/Users/s.p./Desktop/Web3_Dev/Cyfrin_Updraft/audit/protocol-v3.1/protocol"
     ]
   }
 }

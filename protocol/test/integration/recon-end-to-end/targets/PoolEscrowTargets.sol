@@ -49,10 +49,18 @@ abstract contract PoolEscrowTargets is BaseTargetFunctions, Properties {
     }
 
     /// @dev Reserve assets in the pool escrow
+    /// NOTE: Clamps amount <= availableBalance (total - reserved) to mirror real protocol flow
+    /// where reserve() is always preceded by deposit(). GENUINE FINDING: PoolEscrow.reserve()
+    /// lacks internal validation that reserved <= total after increment.
     function poolEscrow_reserve(uint128 amount) public updateGhosts vaultExists {
         amount = _clampAmount(amount);
         address escrowAddr = _getPoolEscrow();
         if (escrowAddr == address(0)) return;
+
+        // Clamp to available balance to prevent reserved > total
+        uint128 available = IPoolEscrow(escrowAddr).availableBalanceOf(activeScId, address(defaultAsset), 0);
+        if (available == 0) return;
+        if (amount > available) amount = available;
 
         try IPoolEscrow(escrowAddr).reserve(activeScId, address(defaultAsset), 0, amount) {
             bytes32 key = _poolEscrowKey(escrowAddr);

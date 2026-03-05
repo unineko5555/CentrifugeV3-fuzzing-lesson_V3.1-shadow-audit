@@ -7,11 +7,14 @@ import {Test} from "forge-std/Test.sol";
 
 // Types for E2E tests
 import {PoolId} from "src/core/types/PoolId.sol";
-import {AssetId} from "src/core/types/AssetId.sol";
+import {AssetId, newAssetId} from "src/core/types/AssetId.sol";
 import {ShareClassId} from "src/core/types/ShareClassId.sol";
+import {AccountId} from "src/core/types/AccountId.sol";
 import {D18, d18} from "src/misc/types/D18.sol";
 import {CastLib} from "src/misc/libraries/CastLib.sol";
 import {IValuation} from "src/core/hub/interfaces/IValuation.sol";
+import {JournalEntry} from "src/core/hub/interfaces/IAccounting.sol";
+import {IBaseVault} from "src/vaults/interfaces/IBaseVault.sol";
 
 /// @title CryticToFoundry
 /// @notice Foundry smoke tests for the E2E fuzzing suite.
@@ -294,5 +297,155 @@ contract CryticToFoundry is Test, TargetFunctions, FoundryAsserts {
         // Epoch ordering should still hold
         property_BRM_E2E_3_epoch_ordering();
         property_CS_5_epoch_monotonicity();
+    }
+
+    // ===================================================================
+    // E2E Price Age
+    // ===================================================================
+
+    function test_e2e_price_age_enforcement() public {
+        admin_createPool(6, 1000e6);
+
+        // Step 1: Set share price on Hub
+        hub.updateSharePrice(activePoolId, activeScId, d18(1e18), uint64(block.timestamp));
+
+        // Step 2: Propagate share price to Spoke via notifySharePrice (Hub → Spoke cross-chain)
+        hub.notifySharePrice(activePoolId, activeScId, SPOKE_CENTRIFUGE_ID, address(this));
+
+        // Step 3: Set max price age to 1 hour (Hub → Spoke cross-chain)
+        hub.setMaxSharePriceAge{value: 0}(activePoolId, activeScId, SPOKE_CENTRIFUGE_ID, 3600, address(this));
+
+        // Price should be valid now
+        spoke.pricePoolPerShare(activePoolId, activeScId, true);
+
+        // Warp forward 2 hours → stale
+        vm.warp(block.timestamp + 7200);
+        vm.expectRevert();
+        spoke.pricePoolPerShare(activePoolId, activeScId, true);
+    }
+
+    // ===================================================================
+    // E2E Journal
+    // ===================================================================
+
+    function test_e2e_journal_balanced() public {
+        admin_createPool(6, 1000e6);
+
+        // Use dedicated journal accounts (not holding-tied)
+        hub.createAccount(activePoolId, JOURNAL_DEBIT_ACC, true);
+        hub.createAccount(activePoolId, JOURNAL_CREDIT_ACC, false);
+
+        JournalEntry[] memory debits = new JournalEntry[](1);
+        debits[0] = JournalEntry({value: 100e6, accountId: JOURNAL_DEBIT_ACC});
+        JournalEntry[] memory credits = new JournalEntry[](1);
+        credits[0] = JournalEntry({value: 100e6, accountId: JOURNAL_CREDIT_ACC});
+
+        hub.updateJournal(activePoolId, debits, credits);
+        // Holding-tied properties should still hold
+        property_ACC_1_holdings_account_consistency();
+        property_CS_9_accounting_equation();
+    }
+
+    function test_e2e_journal_unbalanced_reverts() public {
+        admin_createPool(6, 1000e6);
+
+        hub.createAccount(activePoolId, JOURNAL_DEBIT_ACC, true);
+        hub.createAccount(activePoolId, JOURNAL_CREDIT_ACC, false);
+
+        JournalEntry[] memory debits = new JournalEntry[](1);
+        debits[0] = JournalEntry({value: 100e6, accountId: JOURNAL_DEBIT_ACC});
+        JournalEntry[] memory credits = new JournalEntry[](1);
+        credits[0] = JournalEntry({value: 50e6, accountId: JOURNAL_CREDIT_ACC});
+
+        vm.expectRevert();
+        hub.updateJournal(activePoolId, debits, credits);
+    }
+
+    // ===================================================================
+    // E2E Liability
+    // ===================================================================
+
+    function test_e2e_liability_initialization() public {
+        admin_createPool(6, 1000e6);
+
+        AssetId liabAssetId = newAssetId(SPOKE_CENTRIFUGE_ID, ASSET_ID_COUNTER);
+        ASSET_ID_COUNTER++;
+        hubRegistry.registerAsset(liabAssetId, 18);
+
+        navManager.initializeLiability(
+            activePoolId, activeScId, liabAssetId,
+            IValuation(address(identityValuation))
+        );
+
+        assertTrue(holdings.isLiability(activePoolId, activeScId, liabAssetId));
+        property_CS_9_accounting_equation();
+    }
+
+    // ===================================================================
+    // E2E Access Control
+    // ===================================================================
+
+    function test_e2e_unauthorized_hub_ops_revert() public {
+        admin_createPool(6, 1000e6);
+        address unauthorized = address(0xBEEF);
+        vm.prank(unauthorized);
+        vm.expectRevert();
+        hub.updateSharePrice(activePoolId, activeScId, d18(1e18), uint64(block.timestamp));
+    }
+
+    // ===================================================================
+    // E2E SyncManager
+    // ===================================================================
+
+    function test_e2e_sync_manager_set_valuation() public {
+        admin_createPool(6, 1000e6);
+        // Set valuation to address(0) → SyncManager delegates to spoke.pricePoolPerShare
+        syncManager.setValuation(activePoolId, activeScId, address(0));
+        // Propagate share price to spoke first
+        hub.updateSharePrice(activePoolId, activeScId, d18(1e18), uint64(block.timestamp));
+        hub.notifySharePrice(activePoolId, activeScId, SPOKE_CENTRIFUGE_ID, address(this));
+        // Now pricePoolPerShare should work via spoke delegation
+        D18 price = syncManager.pricePoolPerShare(activePoolId, activeScId);
+        assertGt(D18.unwrap(price), 0, "SyncManager price should be > 0");
+    }
+
+    function test_e2e_sync_manager_set_max_reserve() public {
+        admin_createPool(6, 1000e6);
+        (address asset, uint256 tokenId) = spoke.idToAsset(activeAssetId);
+        syncManager.setMaxReserve(activePoolId, activeScId, asset, tokenId, 1000e6);
+        uint128 res = syncManager.maxReserve(activePoolId, activeScId, asset, tokenId);
+        assertEq(res, 1000e6, "maxReserve should be set");
+    }
+
+    function test_e2e_sync_manager_convert_views() public {
+        admin_createPool(6, 1000e6);
+        try syncManager.convertToShares(IBaseVault(address(vault)), 100e6) {} catch {}
+        try syncManager.convertToAssets(IBaseVault(address(vault)), 100e18) {} catch {}
+    }
+
+    // ===================================================================
+    // E2E Hub Notifications
+    // ===================================================================
+
+    function test_e2e_hub_notifySharePrice() public {
+        admin_createPool(6, 1000e6);
+        hub.updateSharePrice(activePoolId, activeScId, d18(1e18), uint64(block.timestamp));
+        hub.notifySharePrice(activePoolId, activeScId, SPOKE_CENTRIFUGE_ID, address(this));
+        D18 price = spoke.pricePoolPerShare(activePoolId, activeScId, false);
+        assertGt(D18.unwrap(price), 0, "Spoke should have share price after notify");
+    }
+
+    function test_e2e_hub_notifyAssetPrice() public {
+        admin_createPool(6, 1000e6);
+        hub.notifyAssetPrice(activePoolId, activeScId, activeAssetId, address(this));
+        D18 price = spoke.pricePoolPerAsset(activePoolId, activeScId, activeAssetId, false);
+        assertGt(D18.unwrap(price), 0, "Spoke should have asset price after notify");
+    }
+
+    function test_e2e_hub_notifyShareMetadata() public {
+        admin_createPool(6, 1000e6);
+        hub.notifyShareMetadata(activePoolId, activeScId, SPOKE_CENTRIFUGE_ID, address(this));
+        string memory name = token.name();
+        assertTrue(bytes(name).length > 0, "Token should have name after metadata notify");
     }
 }

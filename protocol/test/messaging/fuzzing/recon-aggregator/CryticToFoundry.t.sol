@@ -235,6 +235,22 @@ contract CryticToFoundry is Test, TargetFunctions, FoundryAsserts {
     // Unpaid Mode & Repay
     // ===================================================================
 
+    /// @dev Regression: reproduces the Medusa-found sequence where cross-call
+    ///      vote accumulation from adapter_deliverWithStaleSession + adapter_deliverDuplicate
+    ///      was incorrectly flagged as a single-adapter double-vote bypass (P-AGG-3).
+    function test_regression_cross_call_vote_accumulation() public {
+        // Step 1: adapter_deliverWithStaleSession(0) — adapter1 gets 1 vote in new session
+        adapter_deliverWithStaleSession(0);
+
+        // Step 2: adapter_deliverDuplicate(2, 0) — adapter2 delivers on same messageHash
+        // Delivery happens on first call (adapter1 + adapter2 = quorum), NOT on second.
+        // Fixed ghost tracking should NOT flag this as a single-adapter bypass.
+        adapter_deliverDuplicate(2, 0);
+
+        // Step 3: P-AGG-3 should pass (was failing before the fix)
+        property_AGG_3_no_double_vote_bypass();
+    }
+
     function test_unpaid_mode_and_repay() public {
         // Set adapter estimate cost > 0 so messages become underpaid
         adapter0.setEstimateCost(1 ether);

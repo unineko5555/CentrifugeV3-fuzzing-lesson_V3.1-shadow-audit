@@ -36,16 +36,13 @@ abstract contract SharedStorage {
     // === Ghost: Deposit requests (indexed by asset) === //
     mapping(address => uint256) sumOfDepositRequests;
     mapping(address => uint256) sumOfClaimedRedemptions;
+    // Intentionally 0: no external deposit path exists in single-pool recon-core setup
     mapping(address => uint256) sumOfTransfersIn;
     mapping(address => uint256) sumOfTransfersOut;
 
     // Global-1, Global-2
     mapping(address => uint256) cancelRedeemShareTokenPayout;
     mapping(address => uint256) cancelDepositCurrencyPayout;
-
-    // Cancel request flags
-    mapping(address => bool) hasRequestedDepositCancellation;
-    mapping(address => bool) hasRequestedRedeemCancellation;
 
     // === Ghost: Share token tracking (indexed by share token) === //
     mapping(address => uint256) mintedByCurrencyPayout;
@@ -56,10 +53,6 @@ abstract contract SharedStorage {
     mapping(address => uint256) sumOfClaimedDepositCancelations;
     mapping(address => uint256) sumOfClaimedRedeemCancelations;
 
-    // Legacy tracking
-    mapping(address => uint256) totalCurrenciesSent;
-    mapping(address => uint256) totalShareSent;
-
     // Global-3 tracking
     mapping(address => uint256) executedInvestments;
     mapping(address => uint256) executedRedemptions;
@@ -67,24 +60,12 @@ abstract contract SharedStorage {
     mapping(address => uint256) outGoingTransfers;
     mapping(address => uint256) shareMints;
 
-    // Global-1 and Global-2
-    mapping(address => uint256) claimedAmounts;
-    mapping(address => uint256) depositRequests;
-
     // Per-actor request tracking
     mapping(address => mapping(address => uint256)) requestDepositAssets;
     mapping(address => mapping(address => uint256)) requestRedeemShares;
 
     // === NEW v3.1 Ghost Maps === //
     // PoolEscrow tracking
-    mapping(bytes32 => uint256) ghostPoolEscrowTotal; // keccak256(poolId) => total deposited
-    mapping(bytes32 => uint256) ghostPoolEscrowReserved; // keccak256(poolId) => total reserved
-
-    // VaultRegistry tracking
-    mapping(address => bool) linkedVaults;
-    uint256 linkedVaultCount;
-
-    // RefundEscrow tracking
-    mapping(bytes32 => uint256) refundEscrowDeposits; // keccak256(poolId) => deposits
-    mapping(bytes32 => uint256) refundEscrowWithdrawals; // keccak256(poolId) => withdrawals
+    mapping(bytes32 => uint256) ghostPoolEscrowTotal; // keccak256(poolId, scId, asset, tokenId) => total deposited
+    mapping(bytes32 => uint256) ghostPoolEscrowReserved; // keccak256(poolId, scId, asset, tokenId) => total reserved
 }

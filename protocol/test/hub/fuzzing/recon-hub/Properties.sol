@@ -249,6 +249,10 @@ abstract contract Properties is BeforeAfter, Asserts {
             for (uint32 j = 1; j < shareClassManager.shareClassCount(poolId); j++) {
                 ShareClassId scId = shareClassManager.previewShareClassId(poolId, j);
                 AssetId assetId = hubRegistry.currency(poolId);
+
+                // Skip liability holdings — they use Expense/Liability accounts, not Asset
+                if (holdings.isLiability(poolId, scId, assetId)) continue;
+
                 AccountId accountId = holdings.accountId(poolId, scId, assetId, uint8(AccountType.Asset));
 
                 (, uint128 assets) = accounting.accountValue(poolId, accountId);
@@ -266,6 +270,9 @@ abstract contract Properties is BeforeAfter, Asserts {
             for (uint32 j = 1; j < shareClassManager.shareClassCount(poolId); j++) {
                 ShareClassId scId = shareClassManager.previewShareClassId(poolId, j);
                 AssetId assetId = hubRegistry.currency(poolId);
+
+                // Skip liability holdings — they use Expense/Liability accounts, not Asset/Equity/Gain/Loss
+                if (holdings.isLiability(poolId, scId, assetId)) continue;
 
                 AccountId assetAccountId = holdings.accountId(poolId, scId, assetId, uint8(AccountType.Asset));
                 AccountId equityAccountId = holdings.accountId(poolId, scId, assetId, uint8(AccountType.Equity));
@@ -290,6 +297,9 @@ abstract contract Properties is BeforeAfter, Asserts {
                 ShareClassId scId = shareClassManager.previewShareClassId(poolId, j);
                 AssetId assetId = hubRegistry.currency(poolId);
 
+                // Skip liability holdings — they use Expense/Liability accounts, not Asset/Equity/Gain/Loss
+                if (holdings.isLiability(poolId, scId, assetId)) continue;
+
                 AccountId assetAccountId = holdings.accountId(poolId, scId, assetId, uint8(AccountType.Asset));
                 AccountId equityAccountId = holdings.accountId(poolId, scId, assetId, uint8(AccountType.Equity));
                 AccountId gainAccountId = holdings.accountId(poolId, scId, assetId, uint8(AccountType.Gain));
@@ -309,7 +319,9 @@ abstract contract Properties is BeforeAfter, Asserts {
     // P-HOLD: Holdings Properties
     // ========================================================================
 
-    /// @dev P-HOLD-1: Decrease in holding valuation should not increase accountValue
+    /// @dev P-HOLD-1: Decrease in holding valuation should not increase Asset/Equity/Gain/Expense accountValue.
+    ///      Loss (kind=3) and Liability (kind=5) are EXPECTED to increase when valuation drops
+    ///      (Hub._updateAccountingValue debits Loss/Liability to record the decrease).
     function property_decrease_valuation_no_increase_in_accountValue() public {
         for (uint256 i = 0; i < createdPools.length; i++) {
             PoolId poolId = createdPools[i];
@@ -319,6 +331,10 @@ abstract contract Properties is BeforeAfter, Asserts {
 
                 if (_before.ghostHolding[poolId][scId][assetId] > _after.ghostHolding[poolId][scId][assetId]) {
                     for (uint8 kind = 0; kind < 6; kind++) {
+                        // Skip Loss (3), Expense (4), Liability (5) — these correctly increase on valuation decrease
+                        // (Loss for regular holdings, Expense for liability holdings per double-entry accounting)
+                        if (kind == uint8(AccountType.Loss) || kind == uint8(AccountType.Expense) || kind == uint8(AccountType.Liability)) continue;
+
                         AccountId accountId = holdings.accountId(poolId, scId, assetId, kind);
                         uint128 valueBefore = _before.ghostAccountValue[poolId][accountId];
                         uint128 valueAfter = _after.ghostAccountValue[poolId][accountId];

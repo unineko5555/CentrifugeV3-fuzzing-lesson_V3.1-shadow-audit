@@ -51,7 +51,19 @@ enum OpType {
     BS_SUBMIT_QUEUED_ASSETS,
     BS_SUBMIT_QUEUED_SHARES,
     // Toggle
-    TOGGLE
+    TOGGLE,
+    // Price Age
+    PRICE_AGE_SET,
+    // Liability
+    LIABILITY_INIT,
+    // Journal
+    JOURNAL_UPDATE,
+    // SyncManager
+    SYNC_DEPOSIT,
+    SYNC_MINT,
+    // Hub notifications
+    HUB_NOTIFY_PRICE,
+    HUB_NOTIFY_METADATA
 }
 
 /// @title BeforeAfter

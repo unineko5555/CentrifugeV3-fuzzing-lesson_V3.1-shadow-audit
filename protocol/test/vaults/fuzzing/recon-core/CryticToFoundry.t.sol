@@ -143,4 +143,5 @@ contract CryticToFoundry is Test, TargetFunctions, FoundryAsserts {
         deployNewTokenPoolAndShare(18, 1_000_000e18);
         property_VR_1();
     }
+
 }

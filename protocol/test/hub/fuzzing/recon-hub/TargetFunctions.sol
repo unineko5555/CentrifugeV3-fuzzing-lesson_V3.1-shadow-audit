@@ -41,6 +41,9 @@ abstract contract TargetFunctions is
     ToggleTargets,
     DoomsdayTargets
 {
+    /// @dev Pools created with OracleValuation (for clamped oracle targets)
+    PoolId[] internal oraclePoolIds;
+
     /// === SHORTCUT FUNCTIONS === ///
 
     /// @dev Create pool + share class + holding in one call
@@ -265,15 +268,16 @@ abstract contract TargetFunctions is
         );
     }
 
-    /// @dev OracleValuation price setter (clamped) — internally calls hub.updateHoldingValue
+    /// @dev OracleValuation price setter (clamped) — only operates on oracle-backed pools
     function oracleValuation_setPrice_clamped(uint64 poolIdEntropy, uint32 scEntropy, uint128 price)
         public
         updateGhostsWithType(OpType.SET_ORACLE_PRICE)
     {
-        PoolId poolId = _getRandomPoolId(poolIdEntropy);
+        if (oraclePoolIds.length == 0) return;
+        PoolId poolId = oraclePoolIds[uint256(poolIdEntropy) % oraclePoolIds.length];
         ShareClassId scId = _getRandomShareClassIdForPool(poolId, scEntropy);
         AssetId assetId = hubRegistry.currency(poolId);
-        // Clamp price to reasonable range
+        // Clamp price to reasonable range [0.001, 1000] in D18
         price = uint128(uint256(price) % 1000e18) + 1e15;
         oracleValuation.setPrice(poolId, scId, assetId, D18.wrap(price));
     }
@@ -301,8 +305,9 @@ abstract contract TargetFunctions is
         hubRegistry.setHubRequestManager(poolId, CENTRIFUGE_CHAIN_ID, IHubRequestManager(address(brm)));
         hubRegistry.updateManager(poolId, address(brm), true);
 
-        // Setup NAVManager + OracleValuation feeder
+        // Setup NAVManager + OracleValuation feeder + OracleValuation as hub manager
         navManager.updateManager(poolId, address(this), true);
+        hubRegistry.updateManager(poolId, address(oracleValuation), true);
         oracleValuation.updateFeeder(poolId, address(this), true);
 
         // Create share class
@@ -322,6 +327,61 @@ abstract contract TargetFunctions is
 
         // Set initial oracle price so getPrice/getQuote don't revert
         oracleValuation.setPrice(poolId, scId, AssetId.wrap(encodedAssetId), INITIAL_PRICE);
+
+        // Track oracle-enabled pools for clamped targets
+        oraclePoolIds.push(poolId);
+
+        return (poolId, scId);
+    }
+
+    /// @dev Add share class + create Expense/Liability accounts + initialize liability holding
+    function shortcut_add_share_class_and_liability(
+        uint64 poolId,
+        uint256 salt,
+        bytes16 scId,
+        bool isIdentityValuation
+    ) public {
+        hub_addShareClass(poolId, salt);
+
+        IValuation valuation =
+            isIdentityValuation ? IValuation(address(identityValuation)) : IValuation(address(mockValuation));
+
+        // Create Expense + Liability accounts (different from asset holding accounts)
+        hub_createAccount(poolId, EXPENSE_ACCOUNT, true); // Expense = debit normal
+        hub_createAccount(poolId, LIABILITY_ACCOUNT, false); // Liability = credit normal
+
+        hub_initializeLiability(poolId, scId, valuation, EXPENSE_ACCOUNT, LIABILITY_ACCOUNT);
+    }
+
+    /// @dev Create pool + share class + liability holding in one call
+    function shortcut_create_pool_and_liability(
+        uint8 decimals,
+        uint32 isoCode,
+        uint256 salt,
+        bool isIdentityValuation
+    ) public clearQueuedCalls returns (PoolId poolId, ShareClassId scId) {
+        decimals %= 24;
+        require(decimals >= 6, "decimals must be >= 6");
+
+        // Add and register asset
+        add_new_asset(decimals);
+        uint128 encodedAssetId = newAssetId(CENTRIFUGE_CHAIN_ID, isoCode).raw();
+        hub_registerAsset(encodedAssetId);
+
+        // Create pool
+        uint64 rawPoolId = uint64(uint64(CENTRIFUGE_CHAIN_ID) << 48) | uint64(POOL_ID_COUNTER++);
+        poolId = hub_createPool(address(this), rawPoolId, encodedAssetId);
+
+        // Setup managers
+        hubRegistry.updateManager(poolId, address(this), true);
+        hubRegistry.setHubRequestManager(poolId, CENTRIFUGE_CHAIN_ID, IHubRequestManager(address(brm)));
+        hubRegistry.updateManager(poolId, address(brm), true);
+        navManager.updateManager(poolId, address(this), true);
+        oracleValuation.updateFeeder(poolId, address(this), true);
+
+        // Create share class and liability holding
+        scId = shareClassManager.previewNextShareClassId(poolId);
+        shortcut_add_share_class_and_liability(poolId.raw(), salt, scId.raw(), isIdentityValuation);
 
         return (poolId, scId);
     }

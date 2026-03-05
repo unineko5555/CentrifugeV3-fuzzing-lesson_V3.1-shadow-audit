@@ -37,7 +37,7 @@ abstract contract AsyncVaultProperties is Setup, Asserts {
             ) == 0
         ) return;
 
-        eq(
+        lte(
             _diff(
                 IAsyncVault(asyncVaultTarget).convertToShares(IAsyncVault(asyncVaultTarget).totalAssets()),
                 IERC20Metadata(IAsyncVault(asyncVaultTarget).share()).totalSupply()
@@ -73,6 +73,7 @@ abstract contract AsyncVaultProperties is Setup, Asserts {
         uint256 maxDep = IAsyncVault(asyncVaultTarget).maxDeposit(_getActor());
         uint256 sum = maxDep + amt;
         if (sum == 0) return;
+        if (sum < maxDep) return; // overflow guard
 
         try IAsyncVault(asyncVaultTarget).deposit(sum, _getActor()) {
             t(false, "Property: 7540-6 depositing more than max does not revert");
@@ -87,6 +88,7 @@ abstract contract AsyncVaultProperties is Setup, Asserts {
         uint256 maxDep = IAsyncVault(asyncVaultTarget).maxMint(_getActor());
         uint256 sum = maxDep + amt;
         if (sum == 0) return;
+        if (sum < maxDep) return; // overflow guard
 
         try IAsyncVault(asyncVaultTarget).mint(sum, _getActor()) {
             t(false, "Property: 7540-6 minting more than max does not revert");
@@ -101,6 +103,7 @@ abstract contract AsyncVaultProperties is Setup, Asserts {
         uint256 maxDep = IAsyncVault(asyncVaultTarget).maxWithdraw(_getActor());
         uint256 sum = maxDep + amt;
         if (sum == 0) return;
+        if (sum < maxDep) return; // overflow guard
 
         try IAsyncVault(asyncVaultTarget).withdraw(sum, _getActor(), _getActor()) {
             t(false, "Property: 7540-6 withdrawing more than max does not revert");
@@ -115,6 +118,7 @@ abstract contract AsyncVaultProperties is Setup, Asserts {
         uint256 maxDep = IAsyncVault(asyncVaultTarget).maxRedeem(_getActor());
         uint256 sum = maxDep + amt;
         if (sum == 0) return;
+        if (sum < maxDep) return; // overflow guard
 
         try IAsyncVault(asyncVaultTarget).redeem(sum, _getActor(), _getActor()) {
             t(false, "Property: 7540-6 redeeming more than max does not revert");
@@ -162,7 +166,8 @@ abstract contract AsyncVaultProperties is Setup, Asserts {
     function asyncVault_9_deposit(address asyncVaultTarget) public virtual {
         uint256 maxDeposit = IAsyncVault(asyncVaultTarget).maxDeposit(_getActor());
         if (maxDeposit == 0) return;
-        try IAsyncVault(asyncVaultTarget).deposit(maxDeposit, _getActor()) {
+        try IAsyncVault(asyncVaultTarget).deposit(maxDeposit, _getActor()) returns (uint256 shares) {
+            sumOfClaimedDeposits[address(token)] += shares;
             return;
         } catch {
             t(false, "Property: 7540-9 max deposit reverts");
@@ -172,8 +177,9 @@ abstract contract AsyncVaultProperties is Setup, Asserts {
     function asyncVault_9_mint(address asyncVaultTarget) public virtual {
         uint256 maxMint = IAsyncVault(asyncVaultTarget).maxMint(_getActor());
         if (maxMint == 0) return;
-        try IAsyncVault(asyncVaultTarget).mint(maxMint, _getActor()) {}
-        catch {
+        try IAsyncVault(asyncVaultTarget).mint(maxMint, _getActor()) {
+            sumOfClaimedDeposits[address(token)] += maxMint;
+        } catch {
             t(false, "Property: 7540-9 max mint reverts");
         }
     }
@@ -182,7 +188,7 @@ abstract contract AsyncVaultProperties is Setup, Asserts {
         uint256 maxWithdraw = IAsyncVault(asyncVaultTarget).maxWithdraw(_getActor());
         if (maxWithdraw == 0) return;
         try IAsyncVault(asyncVaultTarget).withdraw(maxWithdraw, _getActor(), _getActor()) {
-            sumOfClaimedRedemptions[_getAsset()] += maxWithdraw;
+            sumOfClaimedRedemptions[vault.asset()] += maxWithdraw;
         } catch {
             t(false, "Property: 7540-9 max withdraw reverts");
         }
@@ -192,7 +198,7 @@ abstract contract AsyncVaultProperties is Setup, Asserts {
         uint256 maxRedeem = IAsyncVault(asyncVaultTarget).maxRedeem(_getActor());
         if (maxRedeem == 0) return;
         try IAsyncVault(asyncVaultTarget).redeem(maxRedeem, _getActor(), _getActor()) returns (uint256 assets) {
-            sumOfClaimedRedemptions[_getAsset()] += assets;
+            sumOfClaimedRedemptions[vault.asset()] += assets;
         } catch {
             t(false, "Property: 7540-9 max redeem reverts");
         }

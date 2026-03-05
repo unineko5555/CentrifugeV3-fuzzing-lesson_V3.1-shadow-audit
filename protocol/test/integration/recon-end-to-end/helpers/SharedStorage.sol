@@ -123,4 +123,27 @@ abstract contract SharedStorage {
     bool redeemExecuted;
     bool cancelExecuted;
     bool priceUpdated;
+
+    // ===================================================================
+    // Price Age Ghost Variables
+    // ===================================================================
+    mapping(PoolId => mapping(ShareClassId => mapping(AssetId => uint64))) ghostMaxAssetPriceAge;
+    mapping(PoolId => mapping(ShareClassId => uint64)) ghostMaxSharePriceAge;
+
+    // ===================================================================
+    // Liability Canaries
+    // ===================================================================
+    bool liabilityInitialized;
+
+    // ===================================================================
+    // Journal Ghost Variables
+    // ===================================================================
+    uint256 ghostJournalEntryCount;
+
+    // ===================================================================
+    // SyncManager Ghost Variables
+    // ===================================================================
+    bool syncVaultDeployed;
+    uint256 ghostSyncDepositCount;
+    uint256 ghostSyncMintCount;
 }

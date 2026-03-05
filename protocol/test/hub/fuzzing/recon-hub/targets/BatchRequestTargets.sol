@@ -265,4 +265,101 @@ abstract contract BatchRequestTargets is BaseTargetFunctions, Properties {
         ShareClassId scId = _getRandomShareClassIdForPool(poolId, scEntropy);
         brm_forceCancelRedeemRequest(poolId.raw(), scId.raw());
     }
+
+    // ========================================================================
+    // BRM.request() — Gateway Message Dispatch Path
+    // ========================================================================
+
+    /// @dev Call BRM.request() with serialized DepositRequest payload
+    ///      Uses actor address as investor to stay consistent with property checks
+    function brm_request_depositRequest(uint64 poolIdEntropy, uint32 scEntropy, uint128 amount)
+        public
+        updateGhosts
+    {
+        PoolId poolId = _getRandomPoolId(poolIdEntropy);
+        ShareClassId scId = _getRandomShareClassIdForPool(poolId, scEntropy);
+        AssetId assetId = hubRegistry.currency(poolId);
+        bytes32 investor = _getActor().toBytes32();
+        // RequestType.DepositRequest = 1, format: uint8(1) ++ bytes32(investor) ++ uint128(amount)
+        bytes memory payload = abi.encodePacked(uint8(1), investor, amount);
+        try brm.request(poolId, scId, assetId, payload) {} catch {}
+    }
+
+    /// @dev Call BRM.request() with serialized RedeemRequest payload
+    function brm_request_redeemRequest(uint64 poolIdEntropy, uint32 scEntropy, uint128 amount)
+        public
+        updateGhosts
+    {
+        PoolId poolId = _getRandomPoolId(poolIdEntropy);
+        ShareClassId scId = _getRandomShareClassIdForPool(poolId, scEntropy);
+        AssetId assetId = hubRegistry.currency(poolId);
+        bytes32 investor = _getActor().toBytes32();
+        // RequestType.RedeemRequest = 2
+        bytes memory payload = abi.encodePacked(uint8(2), investor, amount);
+        try brm.request(poolId, scId, assetId, payload) {} catch {}
+    }
+
+    /// @dev Call BRM.request() with serialized CancelDepositRequest payload
+    function brm_request_cancelDeposit(uint64 poolIdEntropy, uint32 scEntropy)
+        public
+        updateGhosts
+    {
+        PoolId poolId = _getRandomPoolId(poolIdEntropy);
+        ShareClassId scId = _getRandomShareClassIdForPool(poolId, scEntropy);
+        AssetId assetId = hubRegistry.currency(poolId);
+        bytes32 investor = _getActor().toBytes32();
+        // RequestType.CancelDepositRequest = 3
+        bytes memory payload = abi.encodePacked(uint8(3), investor);
+        try brm.request(poolId, scId, assetId, payload) {} catch {}
+    }
+
+    /// @dev Call BRM.request() with serialized CancelRedeemRequest payload
+    function brm_request_cancelRedeem(uint64 poolIdEntropy, uint32 scEntropy)
+        public
+        updateGhosts
+    {
+        PoolId poolId = _getRandomPoolId(poolIdEntropy);
+        ShareClassId scId = _getRandomShareClassIdForPool(poolId, scEntropy);
+        AssetId assetId = hubRegistry.currency(poolId);
+        bytes32 investor = _getActor().toBytes32();
+        // RequestType.CancelRedeemRequest = 4
+        bytes memory payload = abi.encodePacked(uint8(4), investor);
+        try brm.request(poolId, scId, assetId, payload) {} catch {}
+    }
+
+    // ========================================================================
+    // BRM Edge Cases — Zero-Approval + View Functions
+    // ========================================================================
+
+    /// @dev Approve deposits with zero amount — triggers L512 zero-approval branch in _claimDeposit
+    function brm_approveDeposits_zero(uint64 poolIdEntropy, uint32 scEntropy) public updateGhosts {
+        PoolId poolId = _getRandomPoolId(poolIdEntropy);
+        ShareClassId scId = _getRandomShareClassIdForPool(poolId, scEntropy);
+        AssetId assetId = hubRegistry.currency(poolId);
+        uint32 nowDepositEpoch = brm.nowDepositEpoch(poolId, scId, assetId);
+        // Zero approval → paymentAssetAmount = 0 on next claim
+        try brm.approveDeposits(poolId, scId, assetId, nowDepositEpoch, 0, D18.wrap(INITIAL_PRICE.raw()), address(0)) {}
+        catch {}
+    }
+
+    /// @dev ERC-165 supportsInterface — coverage for L678-682
+    function brm_supportsInterface(bytes4 interfaceId) public view {
+        brm.supportsInterface(interfaceId);
+    }
+
+    /// @dev maxDepositClaims view — coverage for L710-717, L731-737
+    function brm_maxDepositClaims(uint64 poolIdEntropy, uint32 scEntropy, bytes32 investor) public view {
+        PoolId poolId = _getRandomPoolId(poolIdEntropy);
+        ShareClassId scId = _getRandomShareClassIdForPool(poolId, scEntropy);
+        AssetId assetId = hubRegistry.currency(poolId);
+        brm.maxDepositClaims(poolId, scId, investor, assetId);
+    }
+
+    /// @dev maxRedeemClaims view — coverage for L720-729, L731-737
+    function brm_maxRedeemClaims(uint64 poolIdEntropy, uint32 scEntropy, bytes32 investor) public view {
+        PoolId poolId = _getRandomPoolId(poolIdEntropy);
+        ShareClassId scId = _getRandomShareClassIdForPool(poolId, scEntropy);
+        AssetId assetId = hubRegistry.currency(poolId);
+        brm.maxRedeemClaims(poolId, scId, investor, assetId);
+    }
 }

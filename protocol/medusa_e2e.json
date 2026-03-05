@@ -13,10 +13,10 @@
     "deployerAddress": "0x30000",
     "senderAddresses": ["0x10000", "0x20000", "0x30000"],
     "blockNumberDelayMax": 60480,
-    "blockTimestampDelayMax": 604800,
+    "blockTimestampDelayMax": 31536000,
     "transactionGasLimit": 12500000,
     "testing": {
-      "stopOnFailedTest": true,
+      "stopOnFailedTest": false,
       "stopOnFailedContractMatching": false,
       "stopOnNoTests": true,
       "testAllContracts": false,
@@ -58,11 +58,7 @@
       "target": ".",
       "solcVersion": "",
       "exportDirectory": "",
-      "args": [
-        "--compile-force-framework",
-        "foundry",
-        "--foundry-compile-all"
-      ]
+      "args": ["--compile-force-framework", "foundry", "--foundry-compile-all"]
     }
   }
 }

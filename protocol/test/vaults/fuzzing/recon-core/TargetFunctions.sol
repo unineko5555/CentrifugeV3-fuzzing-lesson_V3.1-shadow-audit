@@ -15,6 +15,8 @@ import {PoolEscrowTargets} from "./targets/PoolEscrowTargets.sol";
 import {BalanceSheetTargets} from "./targets/BalanceSheetTargets.sol";
 import {VaultRegistryTargets} from "./targets/VaultRegistryTargets.sol";
 import {SyncManagerTargets} from "./targets/SyncManagerTargets.sol";
+import {RootTargets} from "./targets/RootTargets.sol";
+import {TimeWarpTargets} from "./targets/TimeWarpTargets.sol";
 
 abstract contract TargetFunctions is
     BaseTargetFunctions,
@@ -29,7 +31,9 @@ abstract contract TargetFunctions is
     PoolEscrowTargets,
     BalanceSheetTargets,
     VaultRegistryTargets,
-    SyncManagerTargets
+    SyncManagerTargets,
+    RootTargets,
+    TimeWarpTargets
 {
     function invariant_doesTokenGetDeployed() public view returns (bool) {
         if (RECON_TOGGLE_CANARY_TESTS) {

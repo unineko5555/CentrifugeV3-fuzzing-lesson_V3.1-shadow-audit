@@ -112,6 +112,34 @@ abstract contract AdminTargets is BaseTargetFunctions, Properties {
     }
 
     // ========================================================================
+    // Liability Holding Initialization
+    // ========================================================================
+
+    function hub_initializeLiability(
+        uint64 poolIdAsUint,
+        bytes16 scIdAsBytes,
+        IValuation valuation,
+        uint32 expenseAccountAsUint,
+        uint32 liabilityAccountAsUint
+    ) public {
+        PoolId poolId = PoolId.wrap(poolIdAsUint);
+        ShareClassId scId = ShareClassId.wrap(scIdAsBytes);
+        AssetId assetId = hubRegistry.currency(poolId);
+
+        hub.initializeLiability(
+            poolId,
+            scId,
+            assetId,
+            valuation,
+            AccountId.wrap(expenseAccountAsUint),
+            AccountId.wrap(liabilityAccountAsUint)
+        );
+
+        createdAccountIds.push(AccountId.wrap(expenseAccountAsUint));
+        createdAccountIds.push(AccountId.wrap(liabilityAccountAsUint));
+    }
+
+    // ========================================================================
     // Holding Updates
     // ========================================================================
 

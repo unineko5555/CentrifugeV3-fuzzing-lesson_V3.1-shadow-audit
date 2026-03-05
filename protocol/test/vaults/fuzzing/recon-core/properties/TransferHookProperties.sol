@@ -9,7 +9,7 @@ import {BitmapLib} from "src/misc/libraries/BitmapLib.sol";
 
 import {Setup} from "../Setup.sol";
 
-/// @dev TransferHook / FullRestrictions invariant properties — P-TH-1 through P-TH-6
+/// @dev TransferHook / FullRestrictions invariant properties — P-TH-1 through P-TH-7
 abstract contract TransferHookProperties is Setup, Asserts {
     using BitmapLib for uint128;
 
@@ -90,7 +90,7 @@ abstract contract TransferHookProperties is Setup, Asserts {
 
     /// @dev P-TH-5: Canonical flows match their expected classification
     ///      (classifications use priority ordering, so overlaps are valid — we verify correctness)
-    function property_TH_5() public view {
+    function property_TH_5() public {
         if (address(fullRestrictions) == address(0)) return;
 
         address dt = fullRestrictions.depositTarget();
@@ -99,23 +99,23 @@ abstract contract TransferHookProperties is Setup, Asserts {
         if (dt == address(0)) return; // not configured
 
         // Deposit fulfillment: address(0) → depositTarget
-        require(
+        t(
             fullRestrictions.isDepositFulfillment(address(0), dt),
             "P-TH-5: deposit fulfillment misclassified"
         );
 
         // Deposit claim: depositTarget → non-zero address
-        require(fullRestrictions.isDepositClaim(dt, address(1)), "P-TH-5: deposit claim misclassified");
+        t(fullRestrictions.isDepositClaim(dt, address(1)), "P-TH-5: deposit claim misclassified");
 
         // Redeem request: any → ESCROW_HOOK_ID
-        require(
+        t(
             fullRestrictions.isRedeemRequest(address(1), ESCROW_HOOK_ID),
             "P-TH-5: redeem request misclassified"
         );
 
         // Redeem fulfillment: redeemSource → address(0)
         if (rs != address(0)) {
-            require(
+            t(
                 fullRestrictions.isRedeemFulfillment(rs, address(0)),
                 "P-TH-5: redeem fulfillment misclassified"
             );
@@ -123,7 +123,7 @@ abstract contract TransferHookProperties is Setup, Asserts {
 
         // Crosschain transfer: crosschainSource → address(0)
         if (cs != address(0) && cs != rs) {
-            require(
+            t(
                 fullRestrictions.isCrosschainTransfer(cs, address(0)),
                 "P-TH-5: crosschain transfer misclassified"
             );
@@ -131,10 +131,33 @@ abstract contract TransferHookProperties is Setup, Asserts {
 
         // Crosschain execution: crosschainSource → non-zero
         if (cs != address(0)) {
-            require(
+            t(
                 fullRestrictions.isCrosschainTransferExecution(cs, address(1)),
                 "P-TH-5: crosschain execution misclassified"
             );
+        }
+    }
+
+    /// @dev P-TH-7: After membership expires, new transfers to non-member are blocked
+    function property_TH_7() public {
+        if (address(token) == address(0)) return;
+        if (address(fullRestrictions) == address(0)) return;
+        if (address(token.hook()) != address(fullRestrictions)) return;
+
+        address actor = _getActor();
+        (bool isMember,) = fullRestrictions.isMember(address(token), actor);
+        bool isEndorsed = root.endorsed(actor);
+
+        if (!isMember && !isEndorsed) {
+            // Exclude depositTarget and crosschainSource — these system addresses
+            // receive shares via fulfillment/crosschain flows, not membership
+            if (actor == fullRestrictions.depositTarget()) return;
+            if (actor == fullRestrictions.crosschainSource()) return;
+
+            bytes16 hookDataRaw = IShareToken(address(token)).hookDataOf(actor);
+            HookData memory hd = HookData({from: bytes16(0), to: hookDataRaw});
+            bool allowed = fullRestrictions.checkERC20Transfer(address(0), actor, 1, hd);
+            t(!allowed, "P-TH-7: expired non-member allowed transfer receipt");
         }
     }
 

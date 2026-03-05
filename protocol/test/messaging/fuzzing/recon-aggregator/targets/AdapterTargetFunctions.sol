@@ -44,16 +44,27 @@ abstract contract AdapterTargetFunctions is Properties {
         ghost_lastDuplicateHash = messageHash;
 
         uint256 handleBefore = processor.handleCount();
-        try adapter.deliver(REMOTE_CENTRIFUGE_ID, message) {} catch {}
-        try adapter.deliver(REMOTE_CENTRIFUGE_ID, message) {} catch {}
 
-        uint256 newDeliveries = processor.handleCount() - handleBefore;
+        // First delivery attempt
+        try adapter.deliver(REMOTE_CENTRIFUGE_ID, message) {} catch {}
+        uint256 handleAfterFirst = processor.handleCount();
+        bool deliveredOnFirst = handleAfterFirst > handleBefore;
+
+        // Second delivery attempt (duplicate vote)
+        try adapter.deliver(REMOTE_CENTRIFUGE_ID, message) {} catch {}
+        uint256 handleAfterSecond = processor.handleCount();
+        bool deliveredOnSecond = handleAfterSecond > handleAfterFirst;
+
+        uint256 newDeliveries = handleAfterSecond - handleBefore;
         ghost_deliveries += newDeliveries;
 
-        // Record if this single adapter's duplicate votes caused delivery
-        // Only flag when threshold >= 2, since with threshold=1 delivery is expected.
+        // Only flag as single-adapter double-vote bypass if:
+        //   1. threshold >= 2
+        //   2. Delivery happened on the SECOND call but NOT the first
+        // If delivery happened on the first call, it means another adapter's vote
+        // from a prior call (cross-call accumulation) contributed — legitimate quorum.
         uint8 threshold = multiAdapter.threshold(REMOTE_CENTRIFUGE_ID, GLOBAL_POOL);
-        if (newDeliveries > 0 && threshold >= 2) {
+        if (deliveredOnSecond && !deliveredOnFirst && threshold >= 2) {
             ghost_singleAdapterDelivered[address(adapter)][messageHash] = true;
         }
 

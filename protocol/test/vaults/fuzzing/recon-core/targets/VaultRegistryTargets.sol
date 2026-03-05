@@ -14,11 +14,10 @@ import {Properties} from "../properties/Properties.sol";
 
 /// @dev VaultRegistry targets — NEW in v3.1
 abstract contract VaultRegistryTargets is BaseTargetFunctions, Properties {
-    /// @dev Check vault is linked
+    /// @dev Check vault is linked (view coverage only — vault may have been unlinked by removeVault_clamped)
     function vaultRegistry_isLinked() public view {
         if (vaults.length == 0) return;
-        // P-VR-1: only linked vaults can serve requests
-        assert(vaultRegistry.isLinked(IVault(vaults[0])));
+        vaultRegistry.isLinked(IVault(vaults[0]));
     }
 
     /// @dev Unlink and relink the vault

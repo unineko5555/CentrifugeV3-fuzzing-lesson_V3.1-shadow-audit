@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import {Asserts} from "@chimera/Asserts.sol";
 import {MockERC20} from "@recon/MockERC20.sol";
 import {vm} from "@chimera/Hevm.sol";
+import {IPoolEscrow} from "src/core/spoke/interfaces/IPoolEscrow.sol";
 
 import {BeforeAfter, OpType} from "../BeforeAfter.sol";
 
@@ -37,15 +38,30 @@ abstract contract VaultE2EProperties is BeforeAfter, Asserts {
     // P-V-2: totalAssets Solvency
     // ===================================================================
 
-    /// @dev totalAssets <= actual escrow balance (asset tokens held)
+    /// @dev Combined escrow balance (PoolEscrow + globalEscrow) >= sum(maxWithdraw)
+    ///      NOTE: totalAssets() is price-based (convertToAssets(totalSupply)) and may exceed
+    ///      escrow balance when share prices rise. The meaningful solvency check is:
+    ///      escrows hold enough to cover all claimable withdrawals.
     function property_V_2_totalAssets_solvency() public {
         if (address(vault) == address(0)) return;
+        if (createdPools.length == 0) return;
 
-        address assetAddr = vault.asset();
-        uint256 escrowBalance = MockERC20(assetAddr).balanceOf(address(escrow));
-        uint256 totalAssets = vault.totalAssets();
+        try balanceSheet.escrow(activePoolId) returns (IPoolEscrow pe) {
+            if (address(pe) == address(0)) return;
 
-        gte(escrowBalance, totalAssets, "P-V-2: escrow balance < totalAssets");
+            address assetAddr = vault.asset();
+            uint256 poolEscrowBal = MockERC20(assetAddr).balanceOf(address(pe));
+            uint256 globalEscrowBal = MockERC20(assetAddr).balanceOf(address(escrow));
+            uint256 combinedBal = poolEscrowBal + globalEscrowBal;
+
+            uint256 sumMaxWithdraw = 0;
+            address[] memory actors = _getActors();
+            for (uint256 k = 0; k < actors.length; k++) {
+                sumMaxWithdraw += vault.maxWithdraw(actors[k]);
+            }
+
+            gte(combinedBal, sumMaxWithdraw, "P-V-2: combined escrow < sum(maxWithdraw)");
+        } catch {}
     }
 
     // ===================================================================

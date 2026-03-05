@@ -17,6 +17,8 @@ import {AssetId} from "src/core/types/AssetId.sol";
 import {D18} from "src/misc/types/D18.sol";
 import {CastLib} from "src/misc/libraries/CastLib.sol";
 import {UpdateRestrictionMessageLib} from "src/hooks/libraries/UpdateRestrictionMessageLib.sol";
+import {RequestCallbackMessageLib} from "src/vaults/libraries/RequestCallbackMessageLib.sol";
+import {MockERC20} from "@recon/MockERC20.sol";
 
 import {Properties} from "../properties/Properties.sol";
 import {OpType} from "../BeforeAfter.sol";
@@ -204,5 +206,99 @@ abstract contract GatewayMockTargets is BaseTargetFunctions, Properties {
 
     function root_cancelRely(address target) public asAdmin {
         root.cancelRely(target);
+    }
+
+    // === Spoke requestCallback dispatch targets === //
+
+    /// @dev Full dispatch chain: Spoke.requestCallback → ARM.callback → approvedDeposits
+    function spoke_requestCallback_approvedDeposits(uint128 assetAmount, uint128 price)
+        public
+        notGovFuzzing
+        updateGhostsWithType(OpType.ADMIN)
+    {
+        (address asset,) = spoke.idToAsset(AssetId.wrap(assetId));
+        uint256 available = MockERC20(asset).balanceOf(address(escrow));
+        if (available == 0) return;
+        assetAmount = uint128(uint256(assetAmount) % available);
+        if (assetAmount == 0) assetAmount = 1;
+        price = uint128(uint256(price) % 1000e18) + 1e15;
+
+        bytes memory payload = RequestCallbackMessageLib.serialize(
+            RequestCallbackMessageLib.ApprovedDeposits({assetAmount: assetAmount, pricePoolPerAsset: price})
+        );
+        try spoke.requestCallback(PoolId.wrap(poolId), ShareClassId.wrap(scId), AssetId.wrap(assetId), payload) {
+            sumOfTransfersOut[asset] += assetAmount;
+            mintedByCurrencyPayout[asset] += assetAmount;
+        } catch {}
+    }
+
+    /// @dev Full dispatch chain: Spoke.requestCallback → ARM.callback → issuedShares
+    function spoke_requestCallback_issuedShares(uint128 shareAmount, uint128 price)
+        public
+        notGovFuzzing
+        updateGhostsWithType(OpType.ADMIN)
+    {
+        shareAmount = uint128(uint256(shareAmount) % 1_000_000e18) + 1;
+        price = uint128(uint256(price) % 1000e18) + 1e15;
+
+        bytes memory payload = RequestCallbackMessageLib.serialize(
+            RequestCallbackMessageLib.IssuedShares({shareAmount: shareAmount, pricePoolPerShare: price})
+        );
+        try spoke.requestCallback(PoolId.wrap(poolId), ShareClassId.wrap(scId), AssetId.wrap(assetId), payload) {
+            sumOfFullfilledDeposits[address(token)] += shareAmount;
+            shareMints[address(token)] += shareAmount;
+        } catch {}
+    }
+
+    // === Spoke Admin Targets (coverage improvement) === //
+
+    /// @dev Set max age for share price staleness check
+    function spoke_setMaxSharePriceAge(uint64 maxPriceAge) public asAdmin {
+        spoke.setMaxSharePriceAge(PoolId.wrap(poolId), ShareClassId.wrap(scId), maxPriceAge);
+    }
+
+    /// @dev Set max age for asset price staleness check
+    function spoke_setMaxAssetPriceAge(uint64 maxPriceAge) public asAdmin {
+        spoke.setMaxAssetPriceAge(PoolId.wrap(poolId), ShareClassId.wrap(scId), AssetId.wrap(assetId), maxPriceAge);
+    }
+
+    /// @dev Hub→Spoke: execute cross-chain share transfer (mint + transfer to receiver)
+    function spoke_executeTransferShares(uint128 amount, uint256 receiverEntropy)
+        public
+        updateGhostsWithType(OpType.ADMIN)
+        asAdmin
+    {
+        address receiver = _getRandomActor(receiverEntropy);
+        try spoke.executeTransferShares(
+            PoolId.wrap(poolId), ShareClassId.wrap(scId), receiver.toBytes32(), amount
+        ) {
+            shareMints[address(token)] += amount;
+        } catch {}
+    }
+
+    /// @dev Hub→Spoke: toggle share token hook between FullRestrictions and FreelyTransferable
+    function spoke_updateShareHook() public asAdmin {
+        address currentHook = address(token.hook());
+        address newHook = currentHook == address(fullRestrictions) ? address(altHook) : address(fullRestrictions);
+        try spoke.updateShareHook(PoolId.wrap(poolId), ShareClassId.wrap(scId), newHook) {} catch {}
+    }
+
+    /// @dev Public: send untrusted contract update to Hub
+    function spoke_updateContract(bytes32 target, bytes memory payload) public {
+        try spoke.updateContract(PoolId.wrap(poolId), ShareClassId.wrap(scId), target, payload, 0, msg.sender) {}
+        catch {}
+    }
+
+    /// @dev Set extreme price (full uint64 range) to stress mulDiv rounding
+    function spoke_updatePriceExtreme(uint64 price, uint64 computedAt)
+        public
+        updateGhostsWithType(OpType.ADMIN)
+        asAdmin
+    {
+        if (price == 0) price = 1;
+        spoke.updatePricePoolPerShare(PoolId.wrap(poolId), ShareClassId.wrap(scId), D18.wrap(price), computedAt);
+        spoke.updatePricePoolPerAsset(
+            PoolId.wrap(poolId), ShareClassId.wrap(scId), AssetId.wrap(assetId), D18.wrap(price), computedAt
+        );
     }
 }

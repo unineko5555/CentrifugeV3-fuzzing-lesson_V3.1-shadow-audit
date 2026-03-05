@@ -10,6 +10,7 @@ import {MockERC20} from "@recon/MockERC20.sol";
 import {PoolId} from "src/core/types/PoolId.sol";
 import {AssetId, newAssetId} from "src/core/types/AssetId.sol";
 import {ShareClassId} from "src/core/types/ShareClassId.sol";
+import {AccountId} from "src/core/types/AccountId.sol";
 import {D18, d18} from "src/misc/types/D18.sol";
 import {CastLib} from "src/misc/libraries/CastLib.sol";
 import {VaultUpdateKind} from "src/core/messaging/libraries/MessageLib.sol";
@@ -167,4 +168,30 @@ abstract contract AdminTargets is BaseTargetFunctions, Properties {
         );
     }
 
+    // ===================================================================
+    // Metadata Operations
+    // ===================================================================
+
+    /// @dev Set pool metadata on hub registry
+    function admin_setPoolMetadata(bytes32 metadataHash)
+        public
+        updateGhostsWithType(OpType.ADMIN)
+        poolExists
+    {
+        bytes memory metadata = abi.encodePacked(metadataHash);
+        try hub.setPoolMetadata(activePoolId, metadata) {} catch {}
+    }
+
+    /// @dev Set account metadata for the asset account
+    function admin_setAccountMetadata(bytes32 metadataHash)
+        public
+        updateGhostsWithType(OpType.ADMIN)
+        poolExists
+    {
+        AccountId assetAccId = holdings.accountId(activePoolId, activeScId, activeAssetId, 0);
+        (,,, uint64 lastUpdated,) = accounting.accounts(activePoolId, assetAccId);
+        if (lastUpdated == 0) return;
+        bytes memory metadata = abi.encodePacked(metadataHash);
+        try hub.setAccountMetadata(activePoolId, assetAccId, metadata) {} catch {}
+    }
 }
