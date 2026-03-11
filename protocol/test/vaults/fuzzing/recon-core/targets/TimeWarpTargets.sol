@@ -20,4 +20,17 @@ abstract contract TimeWarpTargets is BaseTargetFunctions, Properties {
         delta = between(delta, 1, 1 hours);
         vm.warp(block.timestamp + delta);
     }
+
+    /// @dev Warp to exactly past member expiry — triggers P-TH-2/7 boundary
+    ///      Targeted boundary test: random warp rarely lands on exact expiry edge
+    function time_warp_to_member_expiry() public {
+        if (address(token) == address(0)) return;
+        if (address(fullRestrictions) == address(0)) return;
+        address actor = _getActor();
+        (bool isMember, uint64 validUntil) = fullRestrictions.isMember(address(token), actor);
+        if (!isMember) return;
+        if (validUntil == 0 || validUntil == type(uint64).max) return;
+        if (block.timestamp >= validUntil) return; // already expired
+        vm.warp(uint256(validUntil) + 1);
+    }
 }

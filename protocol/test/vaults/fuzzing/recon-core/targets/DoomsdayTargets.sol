@@ -70,4 +70,16 @@ abstract contract DoomsdayTargets is BaseTargetFunctions, Properties {
         try asyncRequestManager.convertToAssets(IBaseVault(address(vault)), 1e18) {}
         catch { t(false, "ARM convertToAssets reverted"); }
     }
+
+    /// @dev Optimization target: maximize deposit→redeem round-trip precision loss (Finding 6)
+    function optimize_precision_loss() public returns (int256) {
+        if (address(vault) == address(0)) return 0;
+        uint256 assets = 1e18;
+        try vault.convertToShares(assets) returns (uint256 shares) {
+            if (shares == 0) return 0;
+            try vault.convertToAssets(shares) returns (uint256 roundtrip) {
+                return int256(assets) - int256(roundtrip); // maximize loss
+            } catch { return 0; }
+        } catch { return 0; }
+    }
 }

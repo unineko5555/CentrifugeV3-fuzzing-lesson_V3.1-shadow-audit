@@ -225,6 +225,9 @@ abstract contract Properties is BeforeAfter, Asserts {
     // ========================================================================
 
     /// @dev P-ACC-1: account.totalDebit and account.totalCredit <= int128.max
+    /// @notice Precondition: prices must be in realistic range (see oracleValuation_setPrice_clamped).
+    ///         With unrealistic prices (>1e24 D18), cumulative debit/credit can exceed int128.max
+    ///         without indicating a real protocol bug — see Finding 7 analysis.
     function property_account_totalDebit_and_totalCredit_leq_max_int128() public {
         for (uint256 i = 0; i < createdPools.length; i++) {
             PoolId poolId = createdPools[i];

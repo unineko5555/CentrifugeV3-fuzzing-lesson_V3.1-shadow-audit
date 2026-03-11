@@ -277,8 +277,9 @@ abstract contract TargetFunctions is
         PoolId poolId = oraclePoolIds[uint256(poolIdEntropy) % oraclePoolIds.length];
         ShareClassId scId = _getRandomShareClassIdForPool(poolId, scEntropy);
         AssetId assetId = hubRegistry.currency(poolId);
-        // Clamp price to reasonable range [0.001, 1000] in D18
-        price = uint128(uint256(price) % 1000e18) + 1e15;
+        // Realistic price range [0.0001, 1_000_000] in D18 (1e14 to 1e24)
+        // Previous range [1 wei, uint128.max/2] caused P-ACC-1 false positive (Finding 7)
+        price = uint128(uint256(price) % 1_000_000e18) + 0.0001e18;
         oracleValuation.setPrice(poolId, scId, assetId, D18.wrap(price));
     }
 

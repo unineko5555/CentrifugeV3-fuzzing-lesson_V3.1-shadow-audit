@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {BaseTargetFunctions} from "@chimera/BaseTargetFunctions.sol";
+import {vm} from "@chimera/Hevm.sol";
 import {D18} from "src/misc/types/D18.sol";
 import {Properties} from "../properties/Properties.sol";
 import {BeforeAfter, OpType} from "../BeforeAfter.sol";
@@ -51,5 +52,22 @@ abstract contract PriceAgeTargets is BaseTargetFunctions, Properties {
         uint64 maxAge = ghostMaxSharePriceAge[activePoolId][activeScId];
         if (maxAge == 0) return;
         try spoke.pricePoolPerShare(activePoolId, activeScId, true) {} catch {}
+    }
+
+    /// @dev Stale oracle → operate: warp past maxPriceAge then attempt deposit
+    ///      Multi-step target to explore stale oracle state (hard to reach via random sequencing)
+    function priceAge_stale_then_requestDeposit(uint128 amount)
+        public
+        updateGhostsWithType(OpType.PRICE_AGE_SET)
+        poolExists
+    {
+        uint64 maxAge = ghostMaxAssetPriceAge[activePoolId][activeScId][activeAssetId];
+        if (maxAge == 0) return;
+        // Warp just past staleness threshold
+        vm.warp(block.timestamp + uint256(maxAge) + 1);
+        // Attempt deposit under stale price — should revert or behave correctly
+        amount = _clampU128(amount, 1, uint128(type(uint64).max));
+        bytes32 investor = bytes32(uint256(uint160(address(this))));
+        try brm.requestDeposit(activePoolId, activeScId, amount, investor, activeAssetId) {} catch {}
     }
 }

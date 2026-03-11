@@ -2,33 +2,63 @@
 
 ## Phase 3 (recon-e2e) E2E Fuzzing Findings
 
-### Finding 1: PoolEscrow.reserve() Missing Upper Bound Check [Info-Protocol test it]
+### Finding 1: PoolEscrow.reserve() バウンドチェック欠如 — core,e2e
 
-PoolEscrow.reserve() does not validate reserved + value <= total.
-withdraw() correctly checks total >= reserved, but reserve() does not.
-Hub-side revokedShares() callback can cause reserved > total, locking funds.
+根本原因: PoolEscrow.reserve() に require(reserved <= total) がない。一方 withdraw() にはこのチェックがある — 非対称なバグ。
 
-Vulnerable code: src/core/spoke/PoolEscrow.sol L46-51
-Compare with: withdraw() L33-38 (has the check)
+攻撃パス:
 
-Call chain:
-Hub batchRequestManager.revokeShares()
--> message -> Spoke
--> AsyncRequestManager.revokedShares() L280-296
--> balanceSheet.reserve() L134-140
--> poolEscrow.reserve() - NO total bound check
+1. price=1.0 で 100 USDC を deposit → total = 100
+2. price が 1.5 に上昇
+3. redeem → Hub が PricingLib.shareToAssetAmount() で payoutAssetAmount = 150 を計算
+4. revokedShares() → balanceSheet.reserve(150) → reserved = 150 > total = 100
+5. availableBalanceOf() が 0 にアンダーフロー、withdraw() が revert → 資金が永久にロック
 
-Attack: If assetAmount > total, reserve succeeds, availableBalanceOf underflows to 0,
-all subsequent withdraw() calls fail. Funds locked.
+深刻度: High — 影響を受けた PoolEscrow の全ユーザーの資金が永久ロック
 
-Known issue analysis:
+緩和策: PoolEscrow.reserve() に require(reserved <= total) を追加（withdraw() の既存チェックと対称にする）
 
-- README.md known issues (L68-92): NOT mentioned
-- Recon 2025-04 audit (v3): NOT found (M-01 is different)
-- Electisec 2025-10 audit (v3.1): NOT found (PoolEscrow in scope)
-- recon-core P-PE-1: exists but target clamps, so isolated testing cannot trigger
+#### PR #740 の分析 — "修正" の実態
 
-Conclusion: Undiscovered across 19 prior audits. Cross-system bug only found via E2E fuzzing.
+**修正 PR**: [#740](https://github.com/centrifuge/protocol/pull/740) "Add explicit error for reserve underflow in pool escrow"
+
+- commit: [`5cd5bf8`](https://github.com/centrifuge/protocol/commit/5cd5bf8538ea91f6a6b9a094baa01ec86d1841ff)
+- 著者: Jeroen / hieronx (Centrifuge コア開発者)
+- マージ: 2025-10-15
+- v3.1.0 リリースノート Fixes 欄に "PoolEscrow reserve underflow" として記載
+
+**修正内容** — `withdraw()` に explicit revert を追加（`reserve()` は未変更）:
+
+```diff
+ function withdraw(...) external auth {
+     Holding storage holding_ = holding[scId][asset][tokenId];
++    require(holding_.total >= holding_.reserved, InsufficientBalance(asset, tokenId, value, 0));
+     uint128 balance = holding_.total - holding_.reserved;
+```
+
+**この commit が意味すること**:
+
+- `reserved > total` 自体を禁止する修正**ではない**
+- `withdraw()` の arithmetic underflow panic を explicit revert に変えただけ
+- `reserve()` は未変更 → over-reserve は依然として許容
+- IBalanceSheet.sol L162 "It is possible to reserve more than the current balance" も維持
+- unit test (PoolEscrow.t.sol) も over-reserve を正常動作として検証
+
+**結論**: チームは `reserved > total` を **intended design** として維持。
+問題視したのは over-reserve 自体ではなく、その状態で `withdraw()` が generic panic になること。
+"security bug fix" ではなく **"explicit revert hygiene"** と読むのが正確。
+
+#### M01 の最終評価
+
+| 論点                                   | 判定                                                   |
+| -------------------------------------- | ------------------------------------------------------ |
+| `reserved > total` 自体                | intended design (IBalanceSheet doc + unit test が証明) |
+| `withdraw()` の arithmetic panic       | undesired → PR #740 で explicit revert に改善          |
+| M01 "missing bound check in reserve()" | チームが意図的に入れていない → **invalid**             |
+
+- **v3.1_latest (Cantina)**: 提出根拠なし。修正済み + 意図的設計
+- **v3.1 (Sherlock contest)**: "over-reserve 時の withdraw panic" = robustness / revert hygiene。severity は Low 以下
+- Sherlock judge の Invalid 判定: 推論過程は雑 ("auth = safe") だが **結論は正しかった**
 
 ### Finding 2: totalAssets() Uses Stale Price [INFORMATIONAL / KNOWN]
 
@@ -122,6 +152,7 @@ Hub (cross-chain governance)
 `totalAssets()` 分の引き出しを期待する外部プロトコルが revert に遭遇する。
 
 **資金フロー**:
+
 ```
 requestDeposit: user → globalEscrow (ERC20転送)
 fulfillDeposit: globalEscrow → PoolEscrow (authTransferTo)
@@ -135,6 +166,7 @@ share価格が上昇すると理論値が実残高を超え、ERC-4626 の「tot
 `globalEscrow.balance < totalAssets` が成立。
 
 **評価**:
+
 - Finding 2 (stale price) の延長だが、ここでは stale ではなく「正しく伝播された高価格」が原因
 - `maxWithdraw` でガードされるため直接的な資金ロスはない
 - 外部プロトコル連携で `totalAssets()` を信頼すると判断を誤る
@@ -170,3 +202,20 @@ P-SM-2 の tolerance `<= 1 wei` が厳しすぎる。decimals差を考慮した�
   - P-V-2: Finding 5 (totalAssets > escrow balance)
   - P-SM-2: Finding 6 (decimals差による丸め誤差)
 - Coverage: 55.5% (2610/4700 lines), SyncManager 4.4%→61.4%
+
+---
+
+## Fuzzing Suite Improvements (2026-03-10)
+
+精査後の改善計画(64件→10件)を実装。詳細は `modify_plan1.md` を参照。
+
+### Implemented Changes
+
+1. **P-SM-2 拡張**: テスト金額を3パターン(1wei, 1e6, 1e18)に拡張 — Finding 6 boundary coverage
+2. **PriceAgeTargets**: `priceAge_stale_then_requestDeposit` multi-step handler追加 — stale oracle探索
+3. **TimeWarpTargets**: `time_warp_to_member_expiry` targeted boundary handler追加 — P-TH-2/7到達性改善
+4. **PoolEscrowTargets**: `poolEscrow_reserve_unclamped` handler追加 — Finding 1 defense-in-depth
+5. **Price clamp**: Hub `oracleValuation_setPrice_clamped` range を [0.0001, 1_000_000] D18 に修正 (Finding 7 で uint128.max/2 が P-ACC-1 false positive を引き起こしたため)
+6. **Echidna dictionary**: decimals/overflow境界値を全4 config に追加
+7. **DoomsdayTargets (core)**: `optimize_precision_loss` optimization target追加
+8. **DoomsdayTargets (E2E)**: `optimize_max_stuck_funds` optimization target追加

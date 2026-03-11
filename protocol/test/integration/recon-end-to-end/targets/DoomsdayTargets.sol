@@ -7,6 +7,8 @@ import {BaseTargetFunctions} from "@chimera/BaseTargetFunctions.sol";
 // Types
 import {D18, d18} from "src/misc/types/D18.sol";
 import {CastLib} from "src/misc/libraries/CastLib.sol";
+import {IPoolEscrow} from "src/core/spoke/interfaces/IPoolEscrow.sol";
+import {PoolEscrow} from "src/core/spoke/PoolEscrow.sol";
 
 import {Properties} from "../properties/Properties.sol";
 
@@ -140,5 +142,28 @@ abstract contract DoomsdayTargets is BaseTargetFunctions, Properties {
         try navManager.closeGainLoss(activePoolId, SPOKE_CENTRIFUGE_ID) {} catch {}
         // Second call should also succeed (or gracefully return)
         try navManager.closeGainLoss(activePoolId, SPOKE_CENTRIFUGE_ID) {} catch {}
+    }
+
+    // ===================================================================
+    // Optimization Targets (Medusa optimization mode)
+    // ===================================================================
+
+    /// @dev Optimization target: maximize stuck funds in PoolEscrow (Finding 5)
+    ///      Stuck funds = PoolEscrow total - maxWithdraw for current actor
+    function optimize_max_stuck_funds() public returns (int256) {
+        if (address(vault) == address(0)) return 0;
+        (address asset, uint256 tokenId) = spoke.idToAsset(activeAssetId);
+        if (asset == address(0)) return 0;
+
+        IPoolEscrow poolEscrowI = balanceSheet.escrow(activePoolId);
+        if (address(poolEscrowI) == address(0)) return 0;
+        PoolEscrow poolEscrow_ = PoolEscrow(payable(address(poolEscrowI)));
+
+        (uint128 total,) = poolEscrow_.holding(activeScId, asset, tokenId);
+        uint256 maxW = vault.maxWithdraw(address(this));
+        if (uint256(total) > maxW) {
+            return int256(uint256(total) - maxW);
+        }
+        return 0;
     }
 }

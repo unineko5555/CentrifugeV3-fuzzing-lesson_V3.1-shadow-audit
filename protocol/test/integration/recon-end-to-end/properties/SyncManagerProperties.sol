@@ -18,20 +18,26 @@ abstract contract SyncManagerProperties is BeforeAfter, Asserts {
         }
     }
 
-    /// @dev P-SM-2: convertToShares → convertToAssets round-trip within tolerance.
-    ///      With asset(6 dec) / share(18 dec) and two Rounding.Down operations,
-    ///      error can exceed 1 asset-wei. Use asset-scale amount and allow 2 wei.
+    /// @dev P-SM-2: convertToShares → convertToAssets round-trip is non-inflationary.
+    ///      Both conversions use Rounding.Down, so mathematically:
+    ///        shares = floor(pA * 10^18 * amount / (10^6 * pS))  ≤  exact
+    ///        assets = floor(pS * 10^6 * shares / (10^18 * pA))  ≤  testAmount
+    ///      The round-trip must NEVER produce more assets than the input.
+    ///      Tests multiple amounts to cover decimals-boundary precision (Finding 6).
     function property_SM_2_conversion_round_trip() public {
         if (address(vault) == address(0)) return;
         IBaseVault v = IBaseVault(address(vault));
 
-        uint256 testAmount = 1e6; // 1 asset unit (asset-scale, not 1e18)
+        _checkRoundTrip(v, 1);       // 1 wei — smallest unit
+        _checkRoundTrip(v, 1e6);     // typical 6-decimal amount
+        _checkRoundTrip(v, 1e18);    // typical 18-decimal amount
+    }
 
+    function _checkRoundTrip(IBaseVault v, uint256 testAmount) internal {
         try syncManager.convertToShares(v, testAmount) returns (uint256 shares) {
             if (shares == 0) return;
             try syncManager.convertToAssets(v, shares) returns (uint256 assets) {
-                uint256 diff = assets > testAmount ? assets - testAmount : testAmount - assets;
-                lte(diff, 2, "P-SM-2: round-trip conversion off by >2 wei");
+                lte(assets, testAmount, "P-SM-2: round-trip inflated assets (protocol-unfavorable)");
             } catch {}
         } catch {}
     }

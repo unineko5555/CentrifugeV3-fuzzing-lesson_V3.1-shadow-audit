@@ -63,4 +63,19 @@ abstract contract PoolEscrowTargets is BaseTargetFunctions, Properties {
         balanceSheet.unreserve(PoolId.wrap(poolId), ShareClassId.wrap(scId), asset, tokenId, amount);
         ghostPoolEscrowReserved[_poolEscrowKey(asset, tokenId)] -= amount;
     }
+
+    /// @dev Unclamped reserve — allows amount > available to test bound checking
+    ///      Defense-in-depth for Finding 1 (PoolEscrow.reserve missing bound check)
+    function poolEscrow_reserve_unclamped(uint128 amount) public updateGhosts asAdmin {
+        (address asset, uint256 tokenId) = spoke.idToAsset(AssetId.wrap(assetId));
+        IPoolEscrow poolEscrowI = balanceSheet.escrow(PoolId.wrap(poolId));
+        if (address(poolEscrowI) == address(0)) return;
+        if (amount == 0) return;
+        // NO clamping — let the protocol handle (or fail to handle) the bound check
+        try balanceSheet.reserve(PoolId.wrap(poolId), ShareClassId.wrap(scId), asset, tokenId, amount) {
+            ghostPoolEscrowReserved[_poolEscrowKey(asset, tokenId)] += amount;
+        } catch {
+            // Expected to revert if amount > available — this is correct behavior
+        }
+    }
 }

@@ -5,6 +5,7 @@
 | Property | 分類 | 対応 |
 |---|---|---|
 | `property_totalAssets_solvency` | 既知 (README L80) | 修正なし — stale price はエポック間のデザイントレードオフ |
+| `property_PE_1` (×16) | **Genuine Finding 1** | `poolEscrow_reserve_unclamped` が直接トリガー。PoolEscrow.reserve() に `require(reserved <= total)` が欠如。最短 8 calls で再現 |
 
 ## 無効化したプロパティ (return;)
 
